@@ -47,6 +47,12 @@ android {
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
+    lint {
+        // MissingClass is a known false positive for the Kotlin ComponentActivity:
+        // the class compiles and exists, but lint's partial analysis can't resolve
+        // it on its classpath. Do not broaden this to abortOnError=false.
+        disable += "MissingClass"
+    }
 }
 
 dependencies {
