@@ -183,9 +183,40 @@ Follow-up (out of CI-05 scope): drain `ErrorChannel()` in the adapter or make
 (no empty-output failures); full `go test -race ./...` green. No public
 contract change — this is internal process plumbing.
 
+## CI-06 — Race in ClaudeAdapter: `status_change` emitted after the output pump
+
+**Discovered on run `c0a4127`.** With CI-05 fixed, the `ci` test job failed on
+another non-deterministic test (it had passed on `b3a9fa8`; no adapter code
+changed since):
+
+```
+--- FAIL: TestClaudeAdapter_Start_ObservesOutput
+    claude_test.go:109: expected status_change first, got output
+```
+
+This is a **real adapter ordering bug**, not just a strict test.
+
+**Root cause.** In `internal/adapter/claude/claude.go` `Start()`, the output
+pump goroutine is launched (`go a.pump(ctx, run)`, ~line 158) **before** the
+initial `status_change` (starting→active) is sent to `run.signals` (~line 161).
+Both goroutines write the same buffered channel concurrently, so the pump can
+emit an `output` signal before `Start` enqueues the `status_change`. Under a
+loaded CI runner the pump (reading a fast `echo`) wins the race and `output`
+arrives first, violating the contract that a run reports `active` before it
+produces output.
+
+**Fix.** Emit the `status_change` signal **before** `go a.pump(ctx, run)`. The
+channel is buffered (cap 256) so the send does not block, and the status change
+is guaranteed to be enqueued ahead of anything the pump produces. This hardens
+the adapter contract (active-before-output), not merely the test.
+
+**Acceptance.** `go test -race -count=50 ./internal/adapter/claude/` stably
+green; full `go test -race ./...` green. No public contract change — signal
+types and payloads are unchanged; only their guaranteed ordering is fixed.
+
 ## Finish
 
-After CI-01..CI-05, all jobs in both workflows are green on `main` and the
+After CI-01..CI-06, all jobs in both workflows are green on `main` and the
 emulator job has executed. Then reconcile the evidence documents per
 `tasks/26` §B and request reviewer sign-off. Until then, the
 verification/release gate stays **pending**; `in_review → accepted` is not
