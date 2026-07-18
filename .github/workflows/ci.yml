@@ -1,0 +1,132 @@
+# CAR continuous integration (M4-04).
+#
+# Pull requests fail on formatting, static analysis, test, schema drift or
+# broken documentation links. Release artifacts are reproducible and versioned.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.24.1"
+
+jobs:
+  gate:
+    name: format / vet / test / schema / docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      - name: gofmt
+        run: |
+          if [ -n "$(gofmt -l . | grep -v '^vendor/')" ]; then
+            echo "::error::files need formatting"
+            gofmt -l . | grep -v '^vendor/'
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: backup/restore drill (M3-03)
+        # Prove backup→verify→restore round-trips on a clean target.
+        run: |
+          set -e
+          go build -o /tmp/carctl ./cmd/carctl
+          TMP=$(mktemp -d)
+          mkdir -p "$TMP/src/artifacts"
+          echo "db" > "$TMP/src/car.db"
+          echo "art" > "$TMP/src/artifacts/t.txt"
+          printf 'correct horse battery staple' > "$TMP/pass"
+          /tmp/carctl backup --source "$TMP/src" --out "$TMP/b.carbak" --passphrase-file "$TMP/pass"
+          /tmp/carctl verify --in "$TMP/b.carbak" --passphrase-file "$TMP/pass"
+          /tmp/carctl restore --in "$TMP/b.carbak" --target "$TMP/restored" --passphrase-file "$TMP/pass"
+          diff "$TMP/src/car.db" "$TMP/restored/car.db"
+          diff "$TMP/src/artifacts/t.txt" "$TMP/restored/artifacts/t.txt"
+          # Wrong passphrase must fail.
+          printf 'wrong passphrase here' > "$TMP/pass2"
+          if /tmp/carctl verify --in "$TMP/b.carbak" --passphrase-file "$TMP/pass2" 2>/dev/null; then
+            echo "::error::verify should fail with wrong passphrase"
+            exit 1
+          fi
+          rm -rf "$TMP"
+
+      - name: Unit + contract + integration tests
+        run: go test -race -timeout 120s ./...
+        env:
+          # Keep tests deterministic; no real provider, no public network.
+          CAR_TEST_MODE: "deterministic"
+
+      - name: Schema/fixture consistency
+        run: ./scripts/check-schema.sh
+
+      - name: Documentation link validation
+        run: ./scripts/check-docs.sh
+
+      - name: Migration reproducibility
+        run: go test -run 'TestMigrations_Idempotency' ./internal/storage/
+
+  security:
+    name: dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  release:
+    name: reproducible build artifact
+    # Only on tagged releases; versioned together when protocol changes cross components.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [gate, security]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build reproducible server binary
+        run: |
+          CGO_ENABLED=1 GOOS=linux go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o car-${GITHUB_REF_NAME}-linux-amd64 ./cmd/server
+          sha256sum car-${GITHUB_REF_NAME}-linux-amd64 > car-${GITHUB_REF_NAME}-linux-amd64.sha256
+      - name: Upload release artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            car-${{ github.ref_name }}-linux-amd64
+            car-${{ github.ref_name }}-linux-amd64.sha256
+            deploy/Dockerfile
+            deploy/car.service
+            deploy/config.example.json
