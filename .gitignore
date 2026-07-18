@@ -51,3 +51,6 @@ android/local.properties
 *.aab
 *.keystore
 *.jks
+
+# Local secrets (never commit)
+token.md
