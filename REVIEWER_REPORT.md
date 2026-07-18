@@ -167,8 +167,8 @@ Security-sensitive changes re-reviewed: §3 re-check — żadna naprawa nie osł
   auth/expiry/idempotency/replay/isolation/redaction; wszystkie wzmocnione.
 Known limitations: Codex skeleton (no real process); real claude via sh rig;
   DecideApproval stdin version-specific; Android instrumented tests need emulator.
-Release blockers: Android instrumented tests (connectedDebugAndroidTest) must run green in CI; the `instrumented` job is added to android.yml but not yet executed.
-Recommended status: blocked (until the instrumented CI run is green), then in_review → accepted
+Release blockers: Android instrumented tests (connectedDebugAndroidTest) must run green in CI. CI remediation applied: Go 1.26.5 (govulncheck reports no reachable vulns), `-Werror`→`allWarningsAsErrors`, `TestApp_ReplayWithCursor` deterministic. All local gates green; hosted CI run pending.
+Recommended status: blocked (until hosted CI is green)
 Reviewer decision: pending
 ```
 

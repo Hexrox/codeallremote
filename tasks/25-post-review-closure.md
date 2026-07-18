@@ -265,6 +265,7 @@ If the emulator cannot run, status stays `blocked` with the complete CI error an
 ```text
 Android instrumented CI run: PENDING (job added; not yet executed in a git-remote CI environment)
 Review-accounting reconciliation: DONE — 28 candidate findings → 21 resolved (incl. C1 duplicate), 2 declined, 5 follow-up (FR-1..FR-9). Totals consistent across §1 prose, table, and §5 handoff; send-on-closed class is C2/C3 (C1 is the heading dup, explicitly stated).
+CI remediation: CI-01 Go toolchain bumped 1.24.1→1.26.5 (govulncheck: no reachable vulns locally); CI-02 `-Werror` removed from Gradle CLI → `allWarningsAsErrors=true` in build.gradle.kts; CI-03 `TestApp_ReplayWithCursor` made deterministic via an observer-completion barrier (App tracks observer goroutines in a WaitGroup; the test blocks until the terminal event is persisted — not a sleep). All local gates green; hosted CI run pending in git-remote.
 Remaining follow-ups / risk acceptance: FR-1 (low), FR-2 (med), FR-3 (low), FR-4 (low), FR-5 (low), FR-6 (med), FR-7 (med), FR-8 (med), FR-9 (med); S2 and S12 declined with documented risk.
 Release blockers: Android instrumented tests (connectedDebugAndroidTest) must run green in CI.
 Recommended status: blocked (until the instrumented CI run is green), then in_review → accepted.
