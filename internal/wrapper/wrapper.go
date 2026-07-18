@@ -68,8 +68,11 @@ type WrapperOptions struct {
 	// Dir is the working directory
 	Dir string `json:"dir"`
 
-	// Env is environment variables (key=value format)
-	Env []string `json:"env"`
+	// Env is environment variables (key=value format). Never serialized:
+	// buildEnv inherits the full server environment (os.Environ()), which may
+	// carry operator secrets (e.g. ANTHROPIC_API_KEY from the systemd unit), so
+	// this field must not leak into any JSON/log sink.
+	Env []string `json:"-"`
 
 	// Secrets are environment variables that should not be logged
 	Secrets []string `json:"-"`
