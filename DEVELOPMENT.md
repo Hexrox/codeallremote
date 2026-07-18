@@ -93,11 +93,12 @@ go test -v ./...
 - Handle errors explicitly
 - Write tests for all acceptance criteria
 
-## Milestone status (in_review)
+## Milestone status (accepted)
 
-Implementation complete through M5. Status is `in_review`: acceptance
-evidence in `tasks/25-post-review-closure.md`; `accepted` only after review
-sign-off and a green CI run (including Android instrumented tests).
+Implementation complete through M5. Status is `accepted` (approved by owner,
+2026-07-18) — both CI workflows green on the submitted commit `25bfc6d`,
+including the Android instrumented emulator job. Acceptance evidence in
+`tasks/25-post-review-closure.md` and `REVIEWER_REPORT.md`.
 
 - M1 (single-user core): bootstrap, storage/event journal, session manager,
   adapter boundary + fake, wrapper, output normalization, approval bridge,

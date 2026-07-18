@@ -1,7 +1,7 @@
 # CAR — Raport dla reviewera (release decision)
 
 **Data:** 2026-07-18
-**Zalecany status:** `in_review` → `accepted` (oba workflowy green na finalnym commicie; decyzja recenzenta pending)
+**Status:** ✅ `accepted` — APPROVED by owner (admin@daremnytrud.pl), 2026-07-18 (oba workflowy green na finalnym commicie `25bfc6d`)
 **Drzewo:** commit `25bfc6d6e59b1b2bbe3f1ca03dac30cb90b18a17` (branch `main`, `github.com/Hexrox/codeallremote`)
 **Hosted CI:** ci [run #8](https://github.com/Hexrox/codeallremote/actions/runs/29654550009) ✅ · android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) ✅ (incl. instrumented emulator)
 
@@ -202,7 +202,7 @@ Known limitations: Codex skeleton (no real process); real claude via sh rig;
 Release blockers: none. Both workflows green on the final submitted commit 25bfc6d,
   incl. the instrumented emulator job.
 Recommended status: accepted
-Reviewer decision: pending approval
+Reviewer decision: APPROVED by owner (admin@daremnytrud.pl), 2026-07-18 — status accepted
 ```
 
 **Rekomendacja:** zatwierdź jako `accepted`. Oba workflowy (ci + android z

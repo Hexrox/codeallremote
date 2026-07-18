@@ -31,13 +31,15 @@ Start with [the vision](docs/00-vision.md), then read the [architecture](docs/03
 
 ## Status
 
-Implementation of milestones M1–M5 is complete and under review. The Go core
-(server, adapters, storage, WebSocket gateway, identity, audit, plugin SDK),
-the Android client (Kotlin/Compose with a typed REST/WS SDK), deployment
-packaging, and `carctl` backup/restore are implemented and covered by tests.
-Status is `in_review`: acceptance evidence is recorded in
-`tasks/25-post-review-closure.md`; it becomes `accepted` only after the
-reviewer signs off and CI (instrumented Android tests) runs green.
+Implementation of milestones M1–M5 is complete. The Go core (server, adapters,
+storage, WebSocket gateway, identity, audit, plugin SDK), the Android client
+(Kotlin/Compose with a typed REST/WS SDK), deployment packaging, and `carctl`
+backup/restore are implemented and covered by tests.
+Status is **`accepted`** (approved by owner, 2026-07-18). Both CI workflows are
+green on the submitted commit `25bfc6d` — `ci` (gofmt/vet/`go test -race`/
+govulncheck/schema/docs) and `android` including the instrumented emulator job
+(HomeComposeTest ×2, DeepLinkGuardTest ×4). Acceptance evidence is recorded in
+`tasks/25-post-review-closure.md` and `REVIEWER_REPORT.md`.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the build/test commands and the
 current repository structure.

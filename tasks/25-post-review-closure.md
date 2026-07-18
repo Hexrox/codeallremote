@@ -225,7 +225,7 @@ Security-sensitive changes re-reviewed: §1 re-check confirms no weakening of au
 Known limitations: Codex adapter is a contract skeleton (no real process); real claude CLI tested via sh rig; DecideApproval stdin version-specific.
 Release blockers: none. Both workflows green on the final submitted commit 25bfc6d, incl. the instrumented emulator job.
 Recommended status: accepted
-Reviewer decision: pending approval
+Reviewer decision: APPROVED by owner (admin@daremnytrud.pl), 2026-07-18 — status accepted
 ```
 
 ## Acceptance criteria
@@ -277,5 +277,5 @@ CI remediation (tasks/27): CI-01 Go 1.24.1→1.26.5 (govulncheck: no reachable v
 Remaining follow-ups / risk acceptance: FR-1 (low), FR-2 (med), FR-3 (low), FR-4 (low), FR-5 (low), FR-6 (med), FR-7 (med), FR-8 (med), FR-9 (med); S2 and S12 declined with documented risk. Plus one hardening follow-up from CI-05: drain ErrorChannel() in the adapter (or make errCh backpressure explicit) so wrapper output sends can become lossless.
 Release blockers: none. Both workflows green on the final submitted commit 25bfc6d, incl. the instrumented emulator job.
 Recommended status: accepted
-Reviewer decision: pending approval
+Reviewer decision: APPROVED by owner (admin@daremnytrud.pl), 2026-07-18 — status accepted
 ```
