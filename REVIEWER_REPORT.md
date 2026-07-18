@@ -1,8 +1,9 @@
 # CAR — Raport dla reviewera (release decision)
 
 **Data:** 2026-07-18
-**Zalecany status:** `in_review` → `accepted` po green CI (instrumented Android tests)
-**Drzewo:** post-review (workspace bez historii git; commit identyfikator niedostępny)
+**Zalecany status:** `in_review` → `accepted` (oba workflowy green na finalnym commicie; decyzja recenzenta pending)
+**Drzewo:** commit `25bfc6d6e59b1b2bbe3f1ca03dac30cb90b18a17` (branch `main`, `github.com/Hexrox/codeallremote`)
+**Hosted CI:** ci [run #8](https://github.com/Hexrox/codeallremote/actions/runs/29654550009) ✅ · android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) ✅ (incl. instrumented emulator)
 
 Ten dokument jest samodzielnym źródłem kontekstu — rekomendacja release może zostać podjęta bez odtwarzania historii projektu. Zawiera: zakres, dowody z bramek (gates), rozliczenie przeglądu (review), impact na kontrakty, rozważania dotyczące bezpieczeństwa, znane ograniczenia i blockers.
 
@@ -26,7 +27,7 @@ CAR (Code All Remote) — self-hostowany, Android-first control plane do nadzoro
 
 ## 2. Dowody z bramek (finalne drzewo, 2026-07-18)
 
-### Server (Go 1.24.1)
+### Server (Go 1.26.5)
 
 | Area | Komenda | Wynik |
 |---|---|---|
@@ -41,25 +42,44 @@ CAR (Code All Remote) — self-hostowany, Android-first control plane do nadzoro
 
 ### Android (JDK 17, SDK 35)
 
+Wszystkie poniższe potwierdzone green w hosted CI na finalnym commicie
+`25bfc6d` (android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020)):
+
 | Area | Komenda | Wynik |
 |---|---|---|
-| Kompilacja | `./gradlew :app:compileDebugKotlin --no-daemon -Werror` | ✅ BUILD SUCCESSFUL (main + unitTest + androidTest) |
-| Testy JVM | `./gradlew :app:testDebugUnitTest --no-daemon` | ✅ **29 testów** |
-| Lint | `./gradlew :app:lintDebug --no-daemon` | ✅ BUILD SUCCESSFUL |
-| APK | `./gradlew :app:assembleDebug --no-daemon` | ✅ app-debug.apk (64.6 MB) |
-| Instrumented (androidTest) | — | ⚠️ skompilowane i zarejestrowane; **wymaga emulatora/CI** (HomeComposeTest, DeepLinkGuardTest) |
+| Kompilacja (warnings-as-errors) | `./gradlew compileDebugKotlin --no-daemon` (`allWarningsAsErrors=true` w build.gradle.kts — CI-02) | ✅ success |
+| Testy JVM | `./gradlew testDebugUnitTest --no-daemon` | ✅ **29 testów** |
+| Lint | `./gradlew lintDebug --no-daemon` (`MissingClass` false-positive disabled — CI-04) | ✅ success |
+| APK | `./gradlew assembleDebug --no-daemon` | ✅ app-debug.apk |
+| **Instrumented (emulator)** | `./gradlew connectedDebugAndroidTest --no-daemon` | ✅ **success** — 6 metod (HomeComposeTest ×2, DeepLinkGuardTest ×4) na sprzętowo akcelerowanym emulatorze |
 
-**Release blocker:** Android instrumented tests muszą zostać uruchomione green w CI przed `accepted`. Testy są napisane (6 metod `@Test`), brakuje tylko środowiska emulatora lokalnie.
+**Release blocker: NONE.** Instrumented emulator job wykonał się i przeszedł
+green na zgłoszonym commicie `25bfc6d`. Historia: pierwszy green emulatora na
+`8538bce`; przypięty do finalnego `25bfc6d` (drzewo Androida niezmienione).
 
 ### CI workflows
 - `.github/workflows/ci.yml` — Go: format, vet, build, test -race, schema, docs, govulncheck, migracje, backup drill, reproducible release artifact.
-- `.github/workflows/android.yml` — Android: compile -Werror, unit tests, lint, assemble APK, upload artifact.
+- `.github/workflows/android.yml` — Android: compile (warnings-as-errors), unit tests, lint, assemble APK, upload artifact, and the `instrumented` emulator job (`connectedDebugAndroidTest`).
 
 ---
 
 ## 3. Rozliczenie przeglądu kodu (code review)
 
-Trzy równoległe przeglądy (security S1–S14, concurrency C1–C6, contract K1–K8) wyłoniły 28 kandydatów. Po weryfikacji każdy ma dokładnie jeden wynik: **21 resolved** (w tym C1 — duplikat/odniesienie nagłówkowe do klasy send-on-closed; konkretne instancje to C2/C3, oba resolved), **2 declined z uzasadnieniem**, **5 follow-up** (S5→FR-2, C4→FR-6, K5/K6→FR-7, K8→FR-8). Liczby spójne w treści, tabeli i handoff.
+Trzy równoległe przeglądy (security S1–S14, concurrency C1–C6, contract K1–K8)
+dały **28 rekordów katalogu = 27 unikalnych findings + C1**. C1 to duplikat
+nagłówkowy klasy send-on-closed (konkretne instancje to C2/C3, oba resolved) —
+**nie jest liczony jako osobny finding**. 27 unikalnych findings ma dokładnie
+jeden wynik każdy:
+
+- **20 resolved** — S1,S3,S4,S6,S7,S8,S9,S10,S11,S13,S14 (11), C2,C3,C5,C6 (4), K1,K2,K3,K4,K7 (5);
+- **2 declined z uzasadnieniem** — S2, S12;
+- **5 follow-up (deferred przez review)** — S5→FR-2, C4→FR-6, K5→FR-7, K6→FR-7, K8→FR-8.
+
+Kontrola sumy: S 11+2+1=14; C (bez dup C1) 4+1=5; K 5+3=8 → 27 unikalnych;
++ C1 (dup) = 28 rekordów. Liczby spójne w treści, tabeli i handoff. FR-1..FR-9
+pozostają widoczne: FR-2/FR-6/FR-7/FR-8 to findings zdeferowane przez review;
+FR-1/FR-3/FR-4/FR-5/FR-9 to dodatkowe wpisy hardeningu/known-limitations
+(nie są to review findings zamknięte tą decyzją).
 
 ### Naprawione krytyczne/istotne (High)
 
@@ -133,7 +153,7 @@ Trzy równoległe przeglądy (security S1–S14, concurrency C1–C6, contract K
 1. **Codex adapter = contract skeleton** (`internal/adapter/codex/codex.go`). Implementuje pełny `sdk.Adapter` i deklaruje detekcję approvals (structured JSON) + restoration (declines), ale **nie uruchamia realnego procesu Codex** — Start zwraca handle bez child, Observe zamyka kanał natychmiast. Akceptacja tego jako "drugi adapter" LUB utworzenie FR-9 dla realnej integracji.
 2. **Real Claude CLI** testowany tylko przez `sh` rig (deterministyczny, bez credentials dostawcy — docs/23 §Determinism). Realna integracja `claude` executable zależy od operatora.
 3. **DecideApproval stdin protocol** jest version-specific; implementacja wysyła `{"decision":"approve"|"deny"}` na stdin, ale realny format Claude Code może się różnić między wersjami.
-4. **Android instrumented tests** wymagają emulatora (napisane, skompilowane, nie uruchomione lokalnie).
+4. **Android instrumented tests** — wykonane green na emulatorze w hosted CI (commit `25bfc6d`); nie wymagają lokalnego emulatora.
 5. **WireGuard/VPS** to pliki konfiguracyjne (operator wdraża); CI nie testuje sieci infra.
 6. **Identity tokens** przechowywane in-memory; restart serwera unieważnia aktywne tokeny (urządzenia parowane przetrwają w DB) — zgodne ze spec ("restart invalidates ephemeral sessions, not paired-device records").
 
@@ -141,38 +161,57 @@ Trzy równoległe przeglądy (security S1–S14, concurrency C1–C6, contract K
 
 ## 6. Blokery release
 
-| Bloker | Status | Rozwiązanie |
+| Bloker | Status | Dowód |
 |---|---|---|
-| Android instrumented tests green w CI | **pending** | Uruchom `./gradlew connectedDebugAndroidTest` w CI (android.yml → emulator) |
+| Android instrumented tests green w CI | ✅ **none** | android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) green na `25bfc6d`; `instrumented (emulator)` = success |
 
-Wszystkie inne bramy lokalne PASS. Po green CI workflow status → `accepted`.
+**Brak otwartych blokerów release.** Oba workflowy zielone na finalnym,
+zgłoszonym commicie `25bfc6d` (ci [run #8](https://github.com/Hexrox/codeallremote/actions/runs/29654550009),
+android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020)).
+Sesja CI-remediation (CI-01..CI-06, `tasks/27`) domknięta. Finalną tranzycję
+`in_review → accepted` wykonuje recenzent.
 
 ---
 
 ## 7. Rekomendacja
 
 ```text
-Submitted tree / commit: post-review, 2026-07-18
-Review items resolved: 21 (S1,S3,S4,S6,S7,S8,S9,S10,S11,S13,S14,C1,C2,C3,C5,C6,K1,K2,K3,K4,K7)
-Note: C1 is the heading-level dup of the send-on-closed class (concrete C2/C3); not double-counted. Follow-up mappings: S5→FR-2, C4→FR-6, K5/K6→FR-7, K8→FR-8.
+Submitted tree / commit: 25bfc6d6e59b1b2bbe3f1ca03dac30cb90b18a17 (main), 2026-07-18
+Catalogue: 28 records = 27 unique findings + C1 (heading-level dup of the
+  send-on-closed class; concrete instances C2/C3, both resolved; not counted).
+Review items resolved: 20 (S1,S3,S4,S6,S7,S8,S9,S10,S11,S13,S14, C2,C3,C5,C6, K1,K2,K3,K4,K7)
 Review items declined (documented): 2 (S2, S12)
-Review items deferred: 9 (FR-1..FR-9 z owner/priority)
-Server gate evidence: gofmt/vet/build clean; go test -race 23/23 pakiety 0 races;
-  schema/docs/migration green; M1 demo live (idempotency replay potwierdzone)
-Android gate evidence: compile -Werror ok; 29 JVM tests pass; lint ok; APK 64.6MB;
-  instrumented compile-registered, emulator run pending in CI
+Review items deferred (by review): 5 (S5→FR-2, C4→FR-6, K5→FR-7, K6→FR-7, K8→FR-8)
+  20 + 2 + 5 = 27 unique. FR-1/FR-3/FR-4/FR-5/FR-9 are additional hardening/
+  known-limitation backlog entries, not review findings closed by this decision.
+Server gate evidence: ci run #8 green on 25bfc6d — gofmt/vet/build clean;
+  go test -race 23/23 pakiety 0 races; govulncheck no reachable vulns (Go 1.26.5);
+  schema/docs/migration green. https://github.com/Hexrox/codeallremote/actions/runs/29654550009
+Android gate evidence: android run #4 green on 25bfc6d — compile (allWarningsAsErrors),
+  29 JVM tests, lint, APK; instrumented (emulator) SUCCESS — 6 methods (HomeComposeTest x2,
+  DeepLinkGuardTest x4). https://github.com/Hexrox/codeallremote/actions/runs/29654550020
+CI remediation (tasks/27): CI-01 Go 1.26.5/govulncheck; CI-02 allWarningsAsErrors;
+  CI-03 replay determinism; CI-04 lint MissingClass false-positive; CI-05 wrapper
+  drain-before-reap; CI-06 adapter status_change-before-pump. Real sync barriers, no sleeps.
 Migrations, schemas and protocol impact: additive only (config sections, idempotency
   header, Decide late-decision semantics, Android payload type). Brak breaking zmian.
 Security-sensitive changes re-reviewed: §3 re-check — żadna naprawa nie osłabiła
   auth/expiry/idempotency/replay/isolation/redaction; wszystkie wzmocnione.
 Known limitations: Codex skeleton (no real process); real claude via sh rig;
-  DecideApproval stdin version-specific; Android instrumented tests need emulator.
-Release blockers: Android instrumented tests (connectedDebugAndroidTest) must run green in CI. CI remediation applied: Go 1.26.5 (govulncheck reports no reachable vulns), `-Werror`→`allWarningsAsErrors`, `TestApp_ReplayWithCursor` deterministic. All local gates green; hosted CI run pending.
-Recommended status: blocked (until hosted CI is green)
-Reviewer decision: pending
+  DecideApproval stdin version-specific.
+Release blockers: none. Both workflows green on the final submitted commit 25bfc6d,
+  incl. the instrumented emulator job.
+Recommended status: accepted
+Reviewer decision: pending approval
 ```
 
-**Rekomendacja:** zatwierdź jako `accepted` po uruchomieniu CI (szczególnie Android instrumented tests na emulatorze). Wszystkie krytyczne/istotne luki code review naprawione z testami regresyjnymi; kontrakty addytywne; dokumentacja evidence-backed i spójna. Szczegółowe rozliczenie w `tasks/25-post-review-closure.md`.
+**Rekomendacja:** zatwierdź jako `accepted`. Oba workflowy (ci + android z
+jobem emulatora) zielone na finalnym, zgłoszonym commicie `25bfc6d`. Wszystkie
+krytyczne/istotne luki code review naprawione z testami regresyjnymi; klaster
+wyścigów CI (CI-03/05/06) rozwiązany realnymi barierami synchronizacji;
+kontrakty addytywne; dokumentacja evidence-backed i spójna. Finalną tranzycję
+`in_review → accepted` wykonuje recenzent. Szczegółowe rozliczenie w
+`tasks/25-post-review-closure.md`.
 
 ---
 
@@ -202,10 +241,15 @@ A dedicated `instrumented` job was added to `.github/workflows/android.yml` (add
 
 | Dowód | Wymagana wartość | Zarejestrowana wartość |
 | --- | --- | --- |
-| Workflow URL/run identifier | Link lub immutable id | **PENDING** — workflow committed; uruchomienie emulatora na GitHub-hosted runnerze nie wykonane w tym workspace (brak git remote). |
-| Emulator job | Green | **PENDING** (release blocker) |
-| Command | `./gradlew connectedDebugAndroidTest --no-daemon` | skonfigurowane w `instrumented` job `script` |
-| Tests | HomeComposeTest (2) + DeepLinkGuardTest (4) | zarejestrowane w `app/src/androidTest`; uruchomią się na emulatorze |
-| Failure artifacts | raporty testów przy failure | `actions/upload-artifact@v4` z `if: failure()` |
+| Workflow URL/run identifier | Link lub immutable id | ✅ android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) (id 29654550020) |
+| Submitted commit/tree | SHA | ✅ `25bfc6d6e59b1b2bbe3f1ca03dac30cb90b18a17` (branch `main`) |
+| Emulator job | Green | ✅ **success** |
+| Command | `./gradlew connectedDebugAndroidTest --no-daemon` | ✅ wykonane w `instrumented` job |
+| Tests | HomeComposeTest (2) + DeepLinkGuardTest (4) | ✅ wszystkie 6 metod wykonane green na emulatorze |
+| Failure artifacts | raporty testów przy failure | `actions/upload-artifact@v4` z `if: failure()` (run zielony → brak artefaktów błędu) |
 
-Jeśli emulator nie ruszy, status pozostaje `blocked` z kompletnym błędem CI i najmniejszą reproducible remediacją. Kompilacja `androidTest` NIE jest substytutem uruchomienia (kompilacja potwierdzona).
+**Emulator job zielony na zgłoszonym commicie `25bfc6d`** — release blocker
+zamknięty. Pierwszy green emulatora nastąpił na `8538bce`; run #4 przypina
+dowód do finalnego commita. Klaster wyścigów CI (CI-03/05/06) rozwiązany
+realnymi barierami synchronizacji (`tasks/27`), potwierdzony green `ci` na tym
+samym SHA.

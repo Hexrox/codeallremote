@@ -23,9 +23,13 @@ policy, or compatibility guarantee.
 ## 1. Close review feedback
 
 Three parallel review passes (security S1–S14, concurrency C1–C6, contract
-K1–K8) produced 28 candidate findings. After verification each has exactly one
-final outcome: `resolved`, `declined`, or `follow-up`. Totals: **21 resolved**,
-**2 declined**, **5 follow-up**, plus **1 duplicate/non-actionable** (C1).
+K1–K8) produced **28 catalogue records = 27 unique findings + C1**, where C1 is
+a heading-level duplicate of the send-on-closed class (concrete instances C2/C3,
+both resolved) and is **not counted as a separate finding**. Each of the 27
+unique findings has exactly one final outcome: **20 resolved**, **2 declined**,
+**5 follow-up** (20 + 2 + 5 = 27). Sum check: S 11 resolved + 2 declined (S2,S12)
++ 1 follow-up (S5) = 14; C 4 resolved (C2,C3,C5,C6) + 1 follow-up (C4) = 5 unique
+(+ C1 dup); K 5 resolved (K1,K2,K3,K4,K7) + 3 follow-up (K5,K6,K8) = 8.
 Re-check confirms no fix weakened authorization, approval expiry, idempotency,
 event ordering/replay, workspace isolation or secret redaction.
 
@@ -45,7 +49,7 @@ event ordering/replay, workspace isolation or secret redaction.
 | S12 WS error string leak | declined | — | sendErrorAndClose returns err.Error(); low severity, client is authenticated post-hello, reveals JSON field names only. Fixed string = FR-5 (low). | declined |
 | S13 server.go length-only Bearer strip | resolved | internal/server/server.go, internal/auth/auth.go | server withAuth uses auth.BearerToken (strict prefix); TestBearerToken_StrictPrefix | resolved |
 | S14 duplicate route registration ambiguity | resolved | — | Go ServeMux longest-prefix gives /api/v1/devices/ precedence; the /api/v1/ catch-all only fires for unmatched paths and returns 501 (not an auth bypass). Confirmed by api tests. | resolved |
-| C1 send-on-closed (generic, heading) | resolved (duplicate) | — | C1 was a heading-level reference to the send-on-closed class; its concrete instances are C2 (approval) and C3 (WS client), both resolved. No separate code path. Not double-counted. | resolved (duplicate) |
+| C1 send-on-closed (generic, heading) | duplicate | — | C1 is a heading-level reference to the send-on-closed class; its concrete instances are C2 (approval) and C3 (WS client), both resolved. No separate code path. Not a distinct finding, not counted in the 20 resolved. | duplicate (not counted) |
 | C2 notifySubscribers send-on-closed panic | resolved | internal/approval/approval.go | notifySubscribers holds the write lock across the send; Unsubscribe cannot close(ch) mid-send | resolved |
 | C3 client.send send-on-closed panic | resolved | internal/ws/client.go | close() no longer closes sendCh; send is safe. race-clean (ws tests) | resolved |
 | C4 replay/subscribe event-loss window | follow-up | — | Current replay-then-subscribe can drop an event appended in the window; the persisted cursor recovers it on reconnect (no permanent loss). Subscribe-before-replay = FR-6. | follow-up → FR-6 |
@@ -88,7 +92,7 @@ event ordering/replay, workspace isolation or secret redaction.
 ## 2. Run verification after the final fix
 
 Commands run on the post-review tree. Date: 2026-07-18. Environment: Linux
-7.0.14, Go 1.24.1, JDK 17, Android SDK 35.
+7.0.14, Go 1.26.5, JDK 17, Android SDK 35.
 
 ### Server and contracts
 
@@ -111,7 +115,7 @@ Commands run on the post-review tree. Date: 2026-07-18. Environment: Linux
 | Android JVM tests | `./gradlew :app:testDebugUnitTest --no-daemon` | PASS (29 tests) | 2026-07-18 | CursorStore, CarRestClient, Idempotency, PushPayload, HybridCursorStore |
 | Android lint | `./gradlew :app:lintDebug --no-daemon` | PASS (BUILD SUCCESSFUL) | 2026-07-18 | — |
 | Android APK | `./gradlew :app:assembleDebug --no-daemon` | PASS (app-debug.apk, 64.6 MB) | 2026-07-18 | — |
-| Android instrumented (emulator) | `./gradlew :app:connectedDebugAndroidTest --no-daemon` (CI job `instrumented`) | **PENDING** | 2026-07-18 | job added to `.github/workflows/android.yml` (reactivecircus/android-emulator-runner, API 35, KVM); not yet executed because the GitHub-hosted emulator is required. Release blocker until green. |
+| Android instrumented (emulator) | `./gradlew :app:connectedDebugAndroidTest --no-daemon` (CI job `instrumented`) | ✅ **GREEN** | 2026-07-18 | android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) on commit `25bfc6d`; `instrumented (emulator)` = success; all 6 methods (HomeComposeTest ×2, DeepLinkGuardTest ×4) executed on a hardware-accelerated emulator. Release blocker CLOSED. |
 
 Instrumented tests (HomeComposeTest: 2 methods, DeepLinkGuardTest: 4 methods)
 compile and are registered in the `instrumented` CI job. They are the one gate
@@ -119,10 +123,11 @@ not executed locally; the workflow waits on a green CI run.
 
 ### Release gate verification status
 
-The verification/release gate is **pending**, not passed: the Android
-instrumented gate is `PENDING` (§A below tracks it). Do not mark the
-acceptance criterion "All applicable quality gates have passing evidence" as
-complete until the emulator job is green.
+The verification/release gate is **passed**: the Android instrumented gate is
+`GREEN` (§A below records the run). Both workflows are green on the final
+submitted commit `25bfc6d` (ci run #8, android run #4 incl. the emulator job),
+so the acceptance criterion "All applicable quality gates have passing
+evidence" is met.
 
 
 ## 3. Confirm milestone evidence
@@ -187,19 +192,19 @@ Updated in this change set:
   replay header `X-Idempotent-Replay`; Decide semantics (late decision returns
   final state, no double adapter notify); Android payload value type widened
   to JsonElement.
-- Risks: instrumented Android tests require an emulator (not run locally);
-  real `claude` CLI integration tested only via an sh rig; DecideApproval
-  stdin protocol is version-specific and acknowledged-only.
-- Blockers (release): run Android instrumented tests in CI before approval.
-- Next action: reviewer runs the CI workflows (`.github/workflows/ci.yml`,
-  `android.yml`) which execute the full gate matrix including
-  govulncheck and the backup drill; on a green run, flip `in_review`→`accepted`.
+- Risks: real `claude` CLI integration tested only via an sh rig; DecideApproval
+  stdin protocol is version-specific and acknowledged-only. (Instrumented Android
+  tests now run green on the CI emulator — no longer a risk.)
+- Blockers (release): none. Both CI workflows are green on the final submitted
+  commit `25bfc6d`, including the instrumented emulator job.
+- Next action: reviewer confirms the green CI runs (ci run #8, android run #4 on
+  `25bfc6d`) and makes the final `in_review`→`accepted` transition.
 
 ## 6. Final handoff
 
 ```text
 Submitted tree / commit: post-review tree, 2026-07-18 (no git history in this workspace)
-Review items resolved: 21 (S1,S3,S4,S6,S7,S8,S9,S10,S11,S13,S14,C1,C2,C3,C5,C6,K1,K2,K3,K4,K7)
+Review items resolved: 20 (S1,S3,S4,S6,S7,S8,S9,S10,S11,S13,S14,C2,C3,C5,C6,K1,K2,K3,K4,K7)
 Note: C1 is a duplicate/heading reference to the send-on-closed class (concrete instances C2,C3, both resolved); not double-counted. Findings mapped to follow-ups: S5->FR-2, C4->FR-6, K5->FR-7, K6->FR-7, K8->FR-8.
 Review items declined (documented): 2 (S2 rand fallback, S12 error-string leak)
 Review items deferred (follow-ups):
@@ -212,21 +217,22 @@ Review items deferred (follow-ups):
   FR-7 owner=spec        priority=med  — spec/ADR for additive failure transitions + recovering→resumable
   FR-8 owner=app         priority=med  — ApprovalBridge.Cancel on run exit (cancelled vs expired)
   FR-9 owner=adapter     priority=med  — real second adapter (Codex) process spawn + parser
-Server gate evidence: gofmt/vet/build clean; go test -race 23/23 packages 0 races; schema/docs/migration gates green; M1 demo live.
-Android gate evidence: compileDebugKotlin -Werror ok; 29 JVM tests pass; lint ok; APK 64.6MB. Instrumented CI job (connectedDebugAndroidTest) added but NOT yet executed — release blocker.
+Server gate evidence: ci run #8 GREEN on 25bfc6d — gofmt/vet/build clean; go test -race 23/23 packages 0 races; govulncheck no reachable vulns (Go 1.26.5); schema/docs/migration gates green; M1 demo live. https://github.com/Hexrox/codeallremote/actions/runs/29654550009
+Android gate evidence: android run #4 GREEN on 25bfc6d — compileDebugKotlin (allWarningsAsErrors) ok; 29 JVM tests pass; lint ok; APK; instrumented (emulator) SUCCESS — 6 methods executed. https://github.com/Hexrox/codeallremote/actions/runs/29654550020
+CI remediation (tasks/27): CI-01 Go 1.26.5/govulncheck; CI-02 allWarningsAsErrors; CI-03 replay determinism; CI-04 lint MissingClass false-positive; CI-05 wrapper drain-before-reap; CI-06 adapter status_change-before-pump. Real synchronization barriers, not sleeps.
 Migrations, schemas and protocol impact: additive only (config sections, idempotency header, Decide late-decision semantics, Android payload type). No breaking schema/event/API change.
 Security-sensitive changes re-reviewed: §1 re-check confirms no weakening of authorization, approval expiry, idempotency, event ordering/replay, workspace isolation, or secret redaction — all strengthened.
-Known limitations: Codex adapter is a contract skeleton (no real process); real claude CLI tested via sh rig; DecideApproval stdin version-specific; Android instrumented tests need a green CI run.
-Release blockers: Android instrumented tests must run green in CI before accepted.
-Recommended status: blocked (until the instrumented CI run is green), then in_review → accepted
-Reviewer decision: pending
+Known limitations: Codex adapter is a contract skeleton (no real process); real claude CLI tested via sh rig; DecideApproval stdin version-specific.
+Release blockers: none. Both workflows green on the final submitted commit 25bfc6d, incl. the instrumented emulator job.
+Recommended status: accepted
+Reviewer decision: pending approval
 ```
 
 ## Acceptance criteria
 
-- Every code-review item has a recorded resolution. ✓ (§1: 21 resolved incl. C1 duplicate, 2 declined-with-reason, 5 follow-ups mapped to FR-1..FR-9; totals agree across prose, table and handoff)
+- Every code-review item has a recorded resolution. ✓ (§1: 27 unique findings = 20 resolved, 2 declined-with-reason, 5 follow-ups mapped to FR-1..FR-9; + C1 duplicate not counted; totals agree across prose, table and handoff)
 - All applicable quality gates have passing evidence from the final tree, or a
-  clearly recorded blocker and CI result. ⚠️ PARTIAL (§2: server gates green locally; Android compile/JVM/lint/APK green; **instrumented gate = PENDING — release blocker**; not complete until the `instrumented` CI job is green)
+  clearly recorded blocker and CI result. ✓ (§2: both workflows GREEN on the final submitted commit `25bfc6d` — ci run #8, android run #4 incl. instrumented emulator; release blocker CLOSED)
 - The documentation has one consistent, evidence-backed project status. ✓ (§4:
   README/DEVELOPMENT/docs-60 reconciled to `in_review`)
 - Open release risks and the Codex-adapter limitation are explicit. ✓ (§3, §5)
@@ -251,23 +257,25 @@ A dedicated `instrumented` job was added to `.github/workflows/android.yml`:
 
 | Evidence | Required value | Recorded value |
 | --- | --- | --- |
-| Workflow URL/run identifier | Link or immutable run identifier | **PENDING** — the workflow is committed; the GitHub-hosted emulator run has not yet executed in this workspace (no git remote). The run must be observed on the repo's Actions tab. |
-| Submitted commit/tree identifier | SHA preferred | No git history in this workspace; tree is the post-review tree dated 2026-07-18. A SHA is produced on push to a git remote. |
-| Emulator job | Green | **PENDING** (release blocker) |
-| Command | `./gradlew connectedDebugAndroidTest --no-daemon` | configured in the `instrumented` job `script` |
-| Tests | HomeComposeTest (2 methods) + DeepLinkGuardTest (4 methods) | registered in `app/src/androidTest`; will execute on the emulator |
-| Failure artifacts | test reports available on failure | `actions/upload-artifact@v4` step with `if: failure()` uploads `app/build/reports/androidTest/` + `app/build/outputs/androidTest-results/` |
+| Workflow URL/run identifier | Link or immutable run identifier | ✅ android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) (id 29654550020) |
+| Submitted commit/tree identifier | SHA preferred | ✅ `25bfc6d6e59b1b2bbe3f1ca03dac30cb90b18a17` (branch `main`) |
+| Emulator job | Green | ✅ **success** |
+| Command | `./gradlew connectedDebugAndroidTest --no-daemon` | ✅ executed in the `instrumented` job |
+| Tests | HomeComposeTest (2 methods) + DeepLinkGuardTest (4 methods) | ✅ all 6 methods executed green on the emulator |
+| Failure artifacts | test reports available on failure | `actions/upload-artifact@v4` step with `if: failure()` (run green → no failure artifacts) |
 
-If the emulator cannot run, status stays `blocked` with the complete CI error and the smallest reproducible remediation recorded here. Compilation of `androidTest` is NOT a substitute for execution (already confirmed it compiles).
+The emulator job ran green on the final submitted commit `25bfc6d`; the release
+blocker is closed. First green emulator run was on `8538bce`; run #4 pins the
+evidence to the final commit (Android tree unchanged between the two).
 
 ## C. Decision record (tasks/26-C)
 
 ```text
-Android instrumented CI run: PENDING (job added; not yet executed in a git-remote CI environment)
-Review-accounting reconciliation: DONE — 28 candidate findings → 21 resolved (incl. C1 duplicate), 2 declined, 5 follow-up (FR-1..FR-9). Totals consistent across §1 prose, table, and §5 handoff; send-on-closed class is C2/C3 (C1 is the heading dup, explicitly stated).
-CI remediation: CI-01 Go toolchain bumped 1.24.1→1.26.5 (govulncheck: no reachable vulns locally); CI-02 `-Werror` removed from Gradle CLI → `allWarningsAsErrors=true` in build.gradle.kts; CI-03 `TestApp_ReplayWithCursor` made deterministic via an observer-completion barrier (App tracks observer goroutines in a WaitGroup; the test blocks until the terminal event is persisted — not a sleep). All local gates green; hosted CI run pending in git-remote.
-Remaining follow-ups / risk acceptance: FR-1 (low), FR-2 (med), FR-3 (low), FR-4 (low), FR-5 (low), FR-6 (med), FR-7 (med), FR-8 (med), FR-9 (med); S2 and S12 declined with documented risk.
-Release blockers: Android instrumented tests (connectedDebugAndroidTest) must run green in CI.
-Recommended status: blocked (until the instrumented CI run is green), then in_review → accepted.
-Reviewer decision: pending
+Android instrumented CI run: GREEN — android run #4 on commit 25bfc6d, instrumented (emulator) = success, all 6 methods executed. https://github.com/Hexrox/codeallremote/actions/runs/29654550020
+Review-accounting reconciliation: DONE — 28 catalogue records = 27 unique findings (20 resolved, 2 declined, 5 follow-up mapped to FR-2/FR-6/FR-7/FR-8) + C1 (heading duplicate, not counted). Totals consistent across §1 prose, table, and §5 handoff; send-on-closed class is C2/C3.
+CI remediation (tasks/27): CI-01 Go 1.24.1→1.26.5 (govulncheck: no reachable vulns); CI-02 `-Werror`→`allWarningsAsErrors=true` in build.gradle.kts; CI-03 `TestApp_ReplayWithCursor` deterministic via observer-completion WaitGroup barrier; CI-04 lint MissingClass false-positive disabled; CI-05 wrapper drains pipes before cmd.Wait() (os/exec StdoutPipe contract); CI-06 adapter emits status_change before the output pump. Real synchronization barriers, no sleeps. Both workflows green on 25bfc6d (ci run #8, android run #4).
+Remaining follow-ups / risk acceptance: FR-1 (low), FR-2 (med), FR-3 (low), FR-4 (low), FR-5 (low), FR-6 (med), FR-7 (med), FR-8 (med), FR-9 (med); S2 and S12 declined with documented risk. Plus one hardening follow-up from CI-05: drain ErrorChannel() in the adapter (or make errCh backpressure explicit) so wrapper output sends can become lossless.
+Release blockers: none. Both workflows green on the final submitted commit 25bfc6d, incl. the instrumented emulator job.
+Recommended status: accepted
+Reviewer decision: pending approval
 ```
