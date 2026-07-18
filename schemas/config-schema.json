@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "car://schemas/config/v1",
+  "title": "CAR Server Configuration",
+  "description": "Configuration schema for Code All Remote server",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["server", "storage", "security", "logging"],
+  "properties": {
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port"],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8080
+        },
+        "read_timeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m)?$",
+          "default": "30s"
+        },
+        "write_timeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m)?$",
+          "default": "30s"
+        },
+        "shutdown_timeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m)?$",
+          "default": "30s"
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data_source"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["sqlite", "postgres"]
+        },
+        "data_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_open_conns": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "max_idle_conns": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "conn_lifetime": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h)?$",
+          "default": "0"
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_token"],
+      "properties": {
+        "api_token": {
+          "type": "string",
+          "minLength": 16
+        },
+        "token_expiry": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h)?$",
+          "default": "24h"
+        },
+        "require_approval_for_writes": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "default": "text"
+        },
+        "output": {
+          "type": "string",
+          "default": "stdout"
+        }
+      }
+    },
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "display_name", "path"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allowed_adapters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "execution_policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "allow_network_access": {
+                "type": "boolean",
+                "default": false
+              },
+              "allow_writes": {
+                "type": "boolean",
+                "default": false
+              },
+              "allowed_commands": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

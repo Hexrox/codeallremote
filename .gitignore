@@ -1,0 +1,53 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+car
+cmd/server/car
+# Compiled carctl CLI (build product)
+/carctl
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database files (development)
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Android / Gradle build artifacts
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/captures/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks

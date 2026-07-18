@@ -1,0 +1,40 @@
+{
+  "$schema": "../schemas/config-schema.json",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080,
+    "read_timeout": "30s",
+    "write_timeout": "30s",
+    "shutdown_timeout": "30s"
+  },
+  "storage": {
+    "type": "sqlite",
+    "data_source": "data/car.db",
+    "max_open_conns": 1,
+    "max_idle_conns": 1,
+    "conn_lifetime": "1h"
+  },
+  "security": {
+    "api_token": "REPLACE_WITH_SECURE_TOKEN_GENERATED_AT_RUNTIME",
+    "token_expiry": "24h",
+    "require_approval_for_writes": true
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "output": "stdout"
+  },
+  "workspaces": [
+    {
+      "id": "dev-main",
+      "display_name": "Development Main",
+      "path": "/home/user/projects/main",
+      "allowed_adapters": ["claude-code"],
+      "execution_policy": {
+        "allow_network_access": false,
+        "allow_writes": true,
+        "allowed_commands": []
+      }
+    }
+  ]
+}

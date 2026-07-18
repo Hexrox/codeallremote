@@ -1,0 +1,50 @@
+# CAR server systemd unit (homelab deployment).
+#
+# CAR binds only to the loopback/WireGuard interface. The reverse proxy and
+# WireGuard live in separate units; this service owns the agent process and
+# durable data only.
+
+[Unit]
+Description=Code All Remote (CAR) server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=car
+Group=car
+
+# Bind to loopback; the reverse proxy forwards from the WireGuard interface.
+# The config itself sets server.host=127.0.0.1.
+ExecStart=/usr/local/bin/car --config /etc/car/config.json
+Restart=on-failure
+RestartSec=5s
+
+# Hardening: least privilege.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/car
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Resource limits for process supervision.
+LimitNOFILE=4096
+TasksMax=512
+
+# Database and artifacts are persisted here (not in the image).
+StateDirectory=car
+ConfigurationDirectory=car
+
+[Install]
+WantedBy=multi-user.target

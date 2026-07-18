@@ -1,0 +1,21 @@
+# WireGuard config: VPS (stateless transport, M3-02).
+# Peer = homelab CAR host only. Keep this private key on the VPS; never commit.
+#
+# Replace PLACEHOLDER_* with generated values (wg genkey / wg pubkey).
+
+[Interface]
+# VPS WireGuard interface address (inside the tunnel).
+Address = 10.10.0.2/24
+# VPS private key (generated on the VPS; never shared).
+PrivateKey = PLACEHOLDER_VPS_PRIVATE_KEY
+# No inbound WireGuard port needed on the VPS if the homelab initiates;
+# keep a port if the VPS initiates. Uncomment to listen:
+# ListenPort = 51820
+
+[Peer]
+# The homelab CAR host is the ONLY peer.
+PublicKey = PLACEHOLDER_HOMELAB_PUBLIC_KEY
+# Route to the homelab CAR host (loopback-bound service reachable via tunnel).
+AllowedIPs = 10.10.0.1/32
+# Keep the tunnel alive (the VPS typically sits behind NAT).
+PersistentKeepalive = 25

@@ -1,0 +1,16 @@
+{
+  "$id": "car://schemas/session/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CAR session snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspace_id", "adapter_id", "state", "last_sequence"],
+  "properties": {
+    "id": { "type": "string" },
+    "workspace_id": { "type": "string" },
+    "adapter_id": { "type": "string" },
+    "state": { "type": "string" },
+    "last_sequence": { "type": "integer", "minimum": 0 },
+    "pending_approval_id": { "type": ["string", "null"] }
+  }
+}

@@ -1,0 +1,37 @@
+<resources>
+    <string name="app_name">CAR</string>
+
+    <!-- Home -->
+    <string name="home_title">Sessions</string>
+    <string name="home_pair_server">Pair a server</string>
+    <string name="home_no_sessions">No sessions yet. Pair a server and start a session.</string>
+    <string name="home_stale">Last updated %1$s</string>
+
+    <!-- Session -->
+    <string name="session_state_active">Active</string>
+    <string name="session_state_waiting_approval">Approval required</string>
+    <string name="session_state_completed">Completed</string>
+    <string name="session_state_failed">Failed</string>
+    <string name="session_state_interrupted">Interrupted</string>
+    <string name="session_connection_live">Live</string>
+    <string name="session_connection_disconnected">Disconnected</string>
+    <string name="session_composer_hint">Send a prompt</string>
+    <string name="session_composer_unsent">Draft (unsent)</string>
+
+    <!-- Approval -->
+    <string name="approval_title">Approval required</string>
+    <string name="approval_approve">Approve</string>
+    <string name="approval_deny">Deny</string>
+    <string name="approval_resolved">Resolved</string>
+    <string name="approval_expired">Expired</string>
+    <string name="approval_confirm">Confirm decision</string>
+
+    <!-- Generic -->
+    <string name="action_retry">Retry</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_send">Send prompt</string>
+    <string name="cd_connection_status">Connection status</string>
+    <string name="cd_approval_risk">Approval risk</string>
+    <string name="cd_approval_expiry">Approval expiry</string>
+</resources>

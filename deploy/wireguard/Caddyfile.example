@@ -1,0 +1,37 @@
+# Caddy reverse proxy (M3-02): fronts CAR with automatic TLS + WS upgrade.
+#
+# The VPS is stateless transport: it terminates TLS and forwards only the
+# documented routes to the homelab CAR host over WireGuard. It does NOT
+# serve workspace content, transcripts, or hold CAR secrets.
+
+car.example.invalid {
+	# Automatic TLS (Let's Encrypt). No long-lived secrets in the proxy config
+	# beyond the ACME account key managed by Caddy.
+
+	# Forward only documented routes to the homelab (over WireGuard).
+	# /health (liveness) and /ready (readiness) are public; /api/v1/* requires
+	# bearer auth handled by CAR itself.
+
+	# WebSocket upgrade for /api/v1/ws is automatic in Caddy (reverse_proxy
+	# handles Upgrade headers).
+
+	reverse_proxy 10.10.0.1:8080 {
+		# Health-check the upstream so a dead CAR is visible as not-ready.
+		health_uri /health
+		health_interval 30s
+		health_timeout 3s
+	}
+
+	# Defense in depth: block path traversal and known-bad paths at the edge.
+	@bad path /../..* /*/etc/*
+	respond @bad 403
+
+	# Never cache API or WS responses (live data).
+	header /api/v1/* Cache-Control "no-store"
+
+	# Hide the upstream identity header; the proxy is transport, not CAR.
+	header -Server
+}
+
+# NOTE: workspace mounts, transcripts, and the SQLite DB are NEVER present on
+# the VPS. The reverse_proxy target is the homelab's WireGuard interface.

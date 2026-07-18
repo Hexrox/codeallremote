@@ -1,0 +1,17 @@
+{
+  "$id": "car://schemas/event/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CAR domain event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "message_id", "session_id", "sequence", "payload"],
+  "properties": {
+    "type": { "type": "string", "minLength": 1 },
+    "message_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" }
+  }
+}

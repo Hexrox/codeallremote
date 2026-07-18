@@ -1,0 +1,15 @@
+{
+  "$id": "car://schemas/approval/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CAR approval v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "session_id", "state", "expires_at"],
+  "properties": {
+    "id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "state": { "enum": ["pending", "approved", "denied", "expired", "cancelled"] },
+    "category": { "type": "string" },
+    "expires_at": { "type": "string", "format": "date-time" }
+  }
+}

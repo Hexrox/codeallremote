@@ -1,0 +1,26 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080,
+    "read_timeout": "30s",
+    "write_timeout": "30s",
+    "shutdown_timeout": "30s"
+  },
+  "storage": {
+    "type": "sqlite",
+    "data_source": "data/car.db",
+    "max_open_conns": 1,
+    "max_idle_conns": 1
+  },
+  "security": {
+    "api_token": "change-this-to-a-secure-token-min-16-chars",
+    "token_expiry": "24h",
+    "require_approval_for_writes": true
+  },
+  "logging": {
+    "level": "info",
+    "format": "text",
+    "output": "stdout"
+  },
+  "workspaces": []
+}

@@ -1,0 +1,48 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080,
+    "read_timeout": "30s",
+    "write_timeout": "30s",
+    "shutdown_timeout": "30s"
+  },
+  "storage": {
+    "type": "sqlite",
+    "data_source": "/var/lib/car/car.db",
+    "max_open_conns": 1,
+    "max_idle_conns": 1
+  },
+  "security": {
+    "api_token": "REPLACE_AT_BOOTSTRAP_WITH_SECURE_TOKEN",
+    "token_expiry": "24h",
+    "require_approval_for_writes": true
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "output": "stdout"
+  },
+  "adapters": [
+    {
+      "id": "claude-code",
+      "exec_path": "/usr/local/bin/claude",
+      "supported_versions": "*",
+      "env": {
+        "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456"
+      }
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "main",
+      "display_name": "Main project",
+      "path": "/home/owner/projects/main",
+      "allowed_adapters": ["claude-code"],
+      "execution_policy": {
+        "allow_network_access": false,
+        "allow_writes": true,
+        "allowed_commands": []
+      }
+    }
+  ]
+}
