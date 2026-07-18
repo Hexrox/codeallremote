@@ -133,9 +133,50 @@ would also freeze the 41 warnings and hide future regressions).
 **Acceptance.** `Lint` step green in the Android `gate` job; `gate` passes end
 to end so `instrumented (emulator)` runs and executes all six methods.
 
+## CI-05 — Race in ProcessWrapper: `cmd.Wait()` before pipe reads complete
+
+**Discovered on run `8538bce`.** After CI-01..CI-04, the `ci` job failed on a
+non-deterministic test (it had passed on `b3a9fa8`; no Go code changed since):
+
+```
+--- FAIL: TestProcessWrapper_Output
+    wrapper_test.go:131: expected stdout to contain 'stdout_line', got ''
+```
+
+This is a **real wrapper bug**, not just a flaky test.
+
+**Root cause.** `internal/wrapper/wrapper.go` reads child output from
+`cmd.StdoutPipe()` / `cmd.StderrPipe()` in `readOutput` goroutines, but
+`waitForExit()` calls `w.cmd.Wait()` (line ~221) **before** `w.readersWG.Wait()`
+(line ~225). The `os/exec` docs are explicit: *"Wait will close the pipe after
+seeing the command exit, so most callers need not close it themselves. It is
+thus incorrect to call Wait before all reads from the pipe have completed."*
+When `cmd.Wait()` closes the read end before `readOutput` has consumed the
+buffered output, the reader gets a premature EOF/closed-file and forwards
+nothing → empty stdout. On a loaded CI runner the window widens, so it fails
+intermittently.
+
+Secondary (latent) defect in the same file: `readOutput` sends with a
+non-blocking `select { case ch <- data: default: /* drop */ }`, which silently
+drops output if the channel is momentarily full. Prefer a blocking send (the
+consumer drains it) so output is never dropped; if backpressure protection is
+required, make it explicit rather than a silent drop.
+
+**Fix.** Order the drain before the reap: in `waitForExit`, wait for the reader
+goroutines to reach EOF (`readersWG.Wait()`) and only then call `cmd.Wait()` —
+the pipes reach EOF when the child exits (its stdout/stderr fds close),
+independently of the parent calling `Wait()`, so this does not deadlock. This
+matches the documented safe StdoutPipe pattern (read to EOF, then Wait). Keep
+the channel-close and `done` signalling after the reap. Address the
+non-blocking-send drop as part of the same change or note it explicitly.
+
+**Acceptance.** `go test -race -count=50 ./internal/wrapper/` is stably green
+(no empty-output failures); full `go test -race ./...` green. No public
+contract change — this is internal process plumbing.
+
 ## Finish
 
-After CI-01..CI-04, all jobs in both workflows are green on `main` and the
+After CI-01..CI-05, all jobs in both workflows are green on `main` and the
 emulator job has executed. Then reconcile the evidence documents per
 `tasks/26` §B and request reviewer sign-off. Until then, the
 verification/release gate stays **pending**; `in_review → accepted` is not
