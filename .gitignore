@@ -54,3 +54,4 @@ android/local.properties
 
 # Local secrets (never commit)
 token.md
+TASKER.md
