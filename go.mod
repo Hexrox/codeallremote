@@ -1,6 +1,6 @@
 module github.com/code-all-remote/car
 
-go 1.24.1
+go 1.26.5
 
 require github.com/mattn/go-sqlite3 v1.14.24
 
