@@ -1,6 +1,7 @@
 # CAR Android CI (M2-04..19 server-side gates + release blocker instrumentation).
+# CI-02 fix: removed invalid `-Werror` Gradle flag; `allWarningsAsErrors=true` in build.gradle.kts.
 #
-# gate: compile (-Werror), JVM unit tests, lint, debug APK.
+# gate: compile (warnings-as-errors via build.gradle.kts), JVM unit tests, lint, debug APK.
 # instrumented: runs connectedDebugAndroidTest on a hardware-accelerated
 #   emulator (release blocker per tasks/26-release-approval-blocker.md).
 name: android
@@ -53,8 +54,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: ktlint equivalent (compile + warnings as errors)
-        run: ./gradlew compileDebugKotlin --no-daemon -Werror
+      - name: compile (warnings-as-errors configured in build.gradle.kts)
+        run: ./gradlew compileDebugKotlin --no-daemon
 
       - name: JVM unit tests (REST/WS SDK)
         run: ./gradlew testDebugUnitTest --no-daemon
