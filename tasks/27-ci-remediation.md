@@ -93,9 +93,49 @@ the regression is covered so the double-count cannot silently return.
 
 ---
 
+## CI-04 — Android Lint `MissingClass` false positive blocks the gate
+
+**Discovered on run `b3a9fa8`**, after CI-02 fixed the Kotlin compile. The
+Android `gate` job now passes compile + warnings-as-errors but fails at the
+`Lint` step, so `instrumented (emulator)` is still skipped.
+
+**Symptom.** `./gradlew lintDebug --no-daemon` fails:
+`AndroidManifest.xml:28: Error: Class referenced in the manifest,
+io.codeallremote.car.android.MainActivity, was not found in the project or the
+libraries [MissingClass]` → "Lint found errors in the project; aborting build."
+(1 error, 41 warnings).
+
+**Root cause.** False positive. `MainActivity` exists and is correct:
+`android/app/src/main/java/io/codeallremote/car/android/MainActivity.kt`,
+`package io.codeallremote.car.android`, `class MainActivity : ComponentActivity()`.
+The manifest reference `.MainActivity` resolves to that class via the module
+`namespace`, and the Kotlin compile step already passed. `MissingClass` is a
+known Android-lint partial-analysis limitation for Kotlin-declared activities:
+the class is not on lint's classpath during `lintAnalyzeDebug` even though it
+compiles and ships.
+
+**Fix.** Add a targeted `lint {}` block to `android/app/build.gradle.kts` that
+disables only the spurious check, keeping every other lint check and
+`abortOnError` active:
+
+```kotlin
+lint {
+    // MissingClass is a known false positive for the Kotlin ComponentActivity:
+    // the class compiles and exists, but lint's partial analysis can't resolve
+    // it on its classpath. Do not broaden this to abortOnError=false.
+    disable += "MissingClass"
+}
+```
+
+Do not disable `abortOnError` and do not add a blanket lint-baseline (which
+would also freeze the 41 warnings and hide future regressions).
+
+**Acceptance.** `Lint` step green in the Android `gate` job; `gate` passes end
+to end so `instrumented (emulator)` runs and executes all six methods.
+
 ## Finish
 
-After CI-01..CI-03, all jobs in both workflows are green on `main` and the
+After CI-01..CI-04, all jobs in both workflows are green on `main` and the
 emulator job has executed. Then reconcile the evidence documents per
 `tasks/26` §B and request reviewer sign-off. Until then, the
 verification/release gate stays **pending**; `in_review → accepted` is not
