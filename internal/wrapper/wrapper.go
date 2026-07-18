@@ -197,10 +197,19 @@ func (w *ProcessWrapper) readOutput(r io.ReadCloser, ch chan<- []byte) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
+			// Non-blocking send. waitForExit now drains the readers (readersWG)
+			// *before* reaping the process, so a reader that blocked on a full
+			// channel would stall readersWG.Wait() forever and the process would
+			// never be reaped — a deadlock, because in production only stdout is
+			// consumed (the claude adapter drains OutputChannel, not
+			// ErrorChannel). Staying non-blocking keeps the reap path live. The
+			// buffer (cap 100) makes drops unreachable for normal output; the
+			// residual silent-drop-under-flood is tracked as a follow-up (drain
+			// ErrorChannel in the adapter or make errCh backpressure explicit).
 			select {
 			case ch <- data:
 			default:
-				// Channel full, drop data
+				// Channel full and unconsumed: drop rather than deadlock the reap.
 			}
 		}
 		if err != nil {
@@ -218,11 +227,16 @@ func (w *ProcessWrapper) waitForExit() {
 		return
 	}
 
-	err := w.cmd.Wait()
-
-	// Wait for the output readers to drain the pipes (the OS pipe is closed
-	// when the child exits, so Read returns EOF and the readers return).
+	// Drain before reaping. The reader goroutines read the pipes to EOF and
+	// return; the pipes reach EOF when the child exits (its stdout/stderr fds
+	// close), independently of the parent calling cmd.Wait(), so this cannot
+	// deadlock. This is the documented safe StdoutPipe/StderrPipe pattern:
+	// read to EOF, then Wait. Calling cmd.Wait() first would close the read
+	// ends of the pipes while the readers might still have buffered output to
+	// consume, causing a premature closed-file error and dropped output.
 	w.readersWG.Wait()
+
+	err := w.cmd.Wait()
 
 	// Now that no more output will arrive, close the output channels so
 	// consumers ranging over them can terminate.

@@ -158,17 +158,26 @@ intermittently.
 
 Secondary (latent) defect in the same file: `readOutput` sends with a
 non-blocking `select { case ch <- data: default: /* drop */ }`, which silently
-drops output if the channel is momentarily full. Prefer a blocking send (the
-consumer drains it) so output is never dropped; if backpressure protection is
-required, make it explicit rather than a silent drop.
+drops output if the channel is momentarily full.
 
-**Fix.** Order the drain before the reap: in `waitForExit`, wait for the reader
-goroutines to reach EOF (`readersWG.Wait()`) and only then call `cmd.Wait()` —
-the pipes reach EOF when the child exits (its stdout/stderr fds close),
-independently of the parent calling `Wait()`, so this does not deadlock. This
-matches the documented safe StdoutPipe pattern (read to EOF, then Wait). Keep
-the channel-close and `done` signalling after the reap. Address the
-non-blocking-send drop as part of the same change or note it explicitly.
+**Fix (applied).** Order the drain before the reap: in `waitForExit`, wait for
+the reader goroutines to reach EOF (`readersWG.Wait()`) and only then call
+`cmd.Wait()` — the pipes reach EOF when the child exits (its stdout/stderr fds
+close), independently of the parent calling `Wait()`, so this does not
+deadlock. This matches the documented safe StdoutPipe pattern (read to EOF,
+then Wait). Channel-close and `done` signalling stay after the reap. This
+alone fixes the empty-output flake (the failing test drains both channels and
+the cap-100 buffer never dropped the single line).
+
+**Deliberately NOT changed: the non-blocking send stays non-blocking.**
+Switching `readOutput` to a blocking send would, combined with the drain-first
+reorder, deadlock the reap in production: only stdout is consumed (the claude
+adapter drains `OutputChannel`, never `ErrorChannel`), so a child that floods
+stderr past the cap-100 `errCh` buffer would block the stderr reader forever,
+`readersWG.Wait()` would never return, and the process would never be reaped.
+The non-blocking send is retained (with a comment) to keep the reap path live.
+Follow-up (out of CI-05 scope): drain `ErrorChannel()` in the adapter or make
+`errCh` backpressure explicit, then the send can become lossless.
 
 **Acceptance.** `go test -race -count=50 ./internal/wrapper/` is stably green
 (no empty-output failures); full `go test -race ./...` green. No public
