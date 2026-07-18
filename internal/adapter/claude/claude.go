@@ -154,16 +154,21 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 		_, _ = proc.WriteInputString(input.InitialPrompt)
 	}
 
-	// Pump wrapper output through the parser into the signal channel.
-	go a.pump(ctx, run)
-
-	// Status transition: starting -> active.
+	// Status transition: starting -> active. This is enqueued BEFORE the pump
+	// goroutine starts so the run's first signal is always `active`, never
+	// output. The channel is buffered (cap 256) so the send does not block, and
+	// nothing the pump reads is set up only after this point (run and
+	// run.signals are fully constructed above). This guarantees the
+	// active-before-output ordering the adapter contract requires.
 	run.signals <- adapter.AdapterSignal{
 		Type:      adapter.SignalStatusChange,
 		SessionID: session.ID,
 		Timestamp: time.Now(),
 		Payload:   mustMarshal(adapter.StatusChangePayload{OldState: "starting", NewState: domain.RunStateActive}),
 	}
+
+	// Pump wrapper output through the parser into the signal channel.
+	go a.pump(ctx, run)
 
 	return handle, nil
 }
