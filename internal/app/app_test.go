@@ -254,7 +254,16 @@ func TestApp_ReplayWithCursor(t *testing.T) {
 		WorkspaceID: "ws-1", AdapterID: "fake-adapter",
 	})
 	app.StartRun(context.Background(), "owner", s.ID)
-	time.Sleep(200 * time.Millisecond)
+
+	// Block until the adapter observer goroutine has finished emitting every
+	// event for this run. observeAdapter marks itself done only after its
+	// signal loop drains, which happens strictly after the terminal
+	// run.completed event is persisted. The journal is therefore quiescent,
+	// so the two reads below observe the same set of events and no async
+	// publish can slip an extra event in between them. This is a precise
+	// happens-before barrier, not a sleep, so the assertion is deterministic
+	// regardless of scheduler timing on any runner.
+	app.waitForObservers()
 
 	// Replay from beginning.
 	all, _ := app.GetEvents(s.ID, 0, 100)
@@ -262,12 +271,31 @@ func TestApp_ReplayWithCursor(t *testing.T) {
 		t.Fatal("expected at least one event")
 	}
 
-	// Replay from after the first event.
+	// Replay from after the first event must return exactly the remaining
+	// events, in order, each strictly after the cursor — no omission, no
+	// duplication.
 	midCursor := all.Events[0].Sequence
 	rest, _ := app.GetEvents(s.ID, midCursor, 100)
 	if len(rest.Events) != len(all.Events)-1 {
-		t.Errorf("expected %d events after cursor %d, got %d",
+		t.Fatalf("expected %d events after cursor %d, got %d",
 			len(all.Events)-1, midCursor, len(rest.Events))
+	}
+	for i, ev := range rest.Events {
+		if ev.Sequence <= midCursor {
+			t.Errorf("event %d: sequence %d is not strictly after cursor %d",
+				i, ev.Sequence, midCursor)
+		}
+		if want := all.Events[i+1].Sequence; ev.Sequence != want {
+			t.Errorf("event %d: sequence %d, want %d", i, ev.Sequence, want)
+		}
+	}
+
+	// Replaying the same cursor again must be idempotent. This guards against
+	// a double-count regression where a live publish is re-observed by replay.
+	again, _ := app.GetEvents(s.ID, midCursor, 100)
+	if len(again.Events) != len(rest.Events) {
+		t.Fatalf("replay not idempotent: first read %d events, second read %d",
+			len(rest.Events), len(again.Events))
 	}
 }
 

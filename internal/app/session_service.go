@@ -144,6 +144,10 @@ func (a *App) StartRun(ctx context.Context, actorID, sessionID string) (*domain.
 		Context: map[string]any{"run_id": run.ID},
 	})
 
+	// Track the observer goroutine so tests can await journal quiescence
+	// deterministically. Add before launch so a subsequent Wait cannot race
+	// ahead of the increment.
+	a.observers.Add(1)
 	go a.observeAdapter(ctx, ad, s, run, handle)
 
 	return run, nil
@@ -152,6 +156,9 @@ func (a *App) StartRun(ctx context.Context, actorID, sessionID string) (*domain.
 // observeAdapter consumes adapter signals and persists domain events, driving
 // approvals and lifecycle transitions.
 func (a *App) observeAdapter(ctx context.Context, ad adapter.Adapter, s *domain.Session, run *domain.Run, handle *adapter.RunHandle) {
+	// Done runs after the signal loop below drains, i.e. after the terminal
+	// event has been persisted, giving waitForObservers a precise barrier.
+	defer a.observers.Done()
 	defer a.lifecycle.CompleteRun(run.ID)
 
 	signals := ad.Observe(ctx, handle)

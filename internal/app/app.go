@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -50,6 +51,12 @@ type App struct {
 	identity      *identity.Service
 	publisher     EventPublisher
 	nextRunID     uint64
+	// observers tracks in-flight adapter observer goroutines started by
+	// StartRun. Each goroutine calls Done only after its signal loop exits,
+	// i.e. after the run's terminal event has been persisted. Tests use
+	// waitForObservers to obtain a deterministic "journal is quiescent"
+	// barrier without sleeping.
+	observers sync.WaitGroup
 }
 
 // EventPublisher fans a durable domain event out to live subscribers (e.g. the
@@ -344,6 +351,16 @@ func (a *App) emitEvent(sessionID, eventType string, payload map[string]any) err
 		a.publisher.Publish(published)
 	}
 	return nil
+}
+
+// waitForObservers blocks until every adapter observer goroutine started by
+// StartRun has finished. Because a goroutine marks itself Done only after its
+// signal loop drains (which happens strictly after the terminal event has been
+// appended to the journal), a return from this method guarantees the event
+// journal for those runs is quiescent. It is used by tests to make cursor
+// replay deterministic without sleeping; it is not on any request path.
+func (a *App) waitForObservers() {
+	a.observers.Wait()
 }
 
 // toDomainWorkspaces converts config workspaces to domain workspaces.
