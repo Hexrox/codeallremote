@@ -402,6 +402,18 @@ func (a *App) handleCompletion(s *domain.Session, run *domain.Run, sig adapter.A
 		"exit_code":  exitCode,
 		"exit_error": p.ExitError,
 	})
+
+	// A run that has exited can no longer honor a pending approval, so cancel
+	// each one now (resolving it as "cancelled") instead of leaving it to
+	// linger until the periodic expiry sweep.
+	for _, ap := range a.approvals.GetPendingBySession(s.ID) {
+		if err := a.approvals.Cancel(ap.ID); err == nil {
+			a.emitEvent(s.ID, "approval.resolved", map[string]any{
+				"approval_id": ap.ID,
+				"decision":    "cancelled",
+			})
+		}
+	}
 }
 
 func wsPath(ws *domain.Workspace) string {
