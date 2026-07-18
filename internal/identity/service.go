@@ -9,6 +9,7 @@ package identity
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -50,7 +51,6 @@ type Service struct {
 	mu           sync.RWMutex
 	db           *storage.DB
 	challenges   map[string]*Challenge
-	tokens       map[string]*AccessToken // value -> token
 	accessExpiry time.Duration
 	clock        clock
 }
@@ -64,7 +64,6 @@ func NewService(db *storage.DB) *Service {
 	return &Service{
 		db:           db,
 		challenges:   make(map[string]*Challenge),
-		tokens:       make(map[string]*AccessToken),
 		accessExpiry: 15 * time.Minute,
 		clock:        clock{now: time.Now},
 	}
@@ -176,22 +175,26 @@ func (s *Service) PairDevice(ctx context.Context, code, deviceName, devicePubKey
 	}
 
 	// Issue the first access token.
-	token := s.issueToken(device.ID, now, expiry)
+	token, err := s.issueToken(device.ID, now, expiry)
+	if err != nil {
+		return nil, fmt.Errorf("issuing token: %w", err)
+	}
 	return token, nil
 }
 
-// issueToken creates and stores a new access token for a device.
-func (s *Service) issueToken(deviceID string, now time.Time, ttl time.Duration) *AccessToken {
+// issueToken creates and persists a new access token for a device.
+func (s *Service) issueToken(deviceID string, now time.Time, ttl time.Duration) (*AccessToken, error) {
 	tok := &AccessToken{
 		Value:     newID("tok"),
 		DeviceID:  deviceID,
 		IssuedAt:  now,
 		ExpiresAt: now.Add(ttl),
 	}
-	s.mu.Lock()
-	s.tokens[tok.Value] = tok
-	s.mu.Unlock()
-	return tok
+	s.deleteExpiredTokens(now)
+	if err := s.persistToken(tok); err != nil {
+		return nil, err
+	}
+	return tok, nil
 }
 
 // RefreshToken issues a new access token for an already-paired, non-revoked
@@ -209,20 +212,18 @@ func (s *Service) RefreshToken(ctx context.Context, devicePubKey string) (*Acces
 	s.mu.Lock()
 	ttl := s.accessExpiry
 	s.mu.Unlock()
-	return s.issueToken(dev.ID, now, ttl), nil
+	return s.issueToken(dev.ID, now, ttl)
 }
 
 // AuthorizeToken validates an access token and returns the device ID.
 // Revoked devices and expired tokens are rejected.
 func (s *Service) AuthorizeToken(token string) (string, error) {
-	s.mu.RLock()
-	tok, ok := s.tokens[token]
-	s.mu.RUnlock()
-
-	if !ok {
-		return "", ErrTokenInvalid
+	now := s.clock.now()
+	tok, err := s.getToken(token)
+	if err != nil {
+		return "", err
 	}
-	if s.clock.now().After(tok.ExpiresAt) {
+	if now.After(tok.ExpiresAt) {
 		return "", ErrTokenInvalid
 	}
 
@@ -263,6 +264,34 @@ func (s *Service) AuthorizeWS(token string) (string, error) {
 }
 
 // --- persistence helpers ---
+
+func (s *Service) persistToken(tok *AccessToken) error {
+	_, err := s.db.Exec(`
+		INSERT INTO access_tokens (value, device_id, issued_at, expires_at)
+		VALUES (?, ?, ?, ?)
+	`, tok.Value, tok.DeviceID, tok.IssuedAt, tok.ExpiresAt)
+	return err
+}
+
+func (s *Service) getToken(value string) (*AccessToken, error) {
+	var tok AccessToken
+	err := s.db.QueryRow(`
+		SELECT value, device_id, issued_at, expires_at FROM access_tokens WHERE value = ?
+	`, value).Scan(&tok.Value, &tok.DeviceID, &tok.IssuedAt, &tok.ExpiresAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrTokenInvalid
+		}
+		return nil, err
+	}
+	return &tok, nil
+}
+
+// deleteExpiredTokens prunes tokens whose lifetime has elapsed. Called on the
+// write path (token issue) so authorization stays a read-only lookup.
+func (s *Service) deleteExpiredTokens(now time.Time) {
+	_, _ = s.db.Exec(`DELETE FROM access_tokens WHERE expires_at < ?`, now)
+}
 
 func (s *Service) persistDevice(d *domain.Device) error {
 	_, err := s.db.Exec(`

@@ -289,3 +289,52 @@ func TestService_DeviceStateConstants(t *testing.T) {
 		t.Error("DeviceStatePending mismatch")
 	}
 }
+
+// TestAccessTokenPersistsAcrossRestart proves tokens survive a server restart:
+// a token issued by one Service is authorized by a fresh Service on the same DB.
+func TestAccessTokenPersistsAcrossRestart(t *testing.T) {
+	db, err := storage.Open("sqlite3", ":memory:") // Open auto-runs migrations
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	now := time.Now()
+	devID := "dev_test"
+	if _, err := db.Exec(`INSERT INTO devices (id, name, public_key, state, created_at) VALUES (?, ?, ?, ?, ?)`,
+		devID, "n", "pubkey-unique", "paired", now); err != nil {
+		t.Fatalf("device: %v", err)
+	}
+
+	svcA := NewService(db)
+	svcA.SetClock(func() time.Time { return now })
+	token, err := svcA.issueToken(devID, now, time.Hour)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+
+	// Fresh Service (simulating a restart) on the same DB authorizes the token.
+	svcB := NewService(db)
+	svcB.SetClock(func() time.Time { return now })
+	got, err := svcB.AuthorizeToken(token.Value)
+	if err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	if got != devID {
+		t.Fatalf("got %q want %q", got, devID)
+	}
+
+	// Past expiry -> ErrTokenInvalid.
+	svcB.SetClock(func() time.Time { return now.Add(2 * time.Hour) })
+	if _, err := svcB.AuthorizeToken(token.Value); err != ErrTokenInvalid {
+		t.Fatalf("expired: got %v want ErrTokenInvalid", err)
+	}
+
+	// Revoked device -> ErrDeviceRevoked.
+	svcB.SetClock(func() time.Time { return now })
+	if _, err := db.Exec(`UPDATE devices SET state = ? WHERE id = ?`, domain.DeviceStateRevoked, devID); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if _, err := svcB.AuthorizeToken(token.Value); err != ErrDeviceRevoked {
+		t.Fatalf("revoked: got %v want ErrDeviceRevoked", err)
+	}
+}

@@ -160,6 +160,25 @@ var Migrations = []Migration{
 			DROP TABLE IF EXISTS devices;
 		`,
 	},
+	{
+		ID:   3,
+		Name: "add_access_tokens",
+		Up: `
+			-- Persist device access tokens so a server restart does not
+			-- invalidate active sessions (paired devices already persist).
+			CREATE TABLE IF NOT EXISTS access_tokens (
+				value TEXT PRIMARY KEY,
+				device_id TEXT NOT NULL REFERENCES devices(id),
+				issued_at DATETIME NOT NULL,
+				expires_at DATETIME NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS idx_access_tokens_device ON access_tokens(device_id);
+		`,
+		Down: `
+			DROP INDEX IF EXISTS idx_access_tokens_device;
+			DROP TABLE IF EXISTS access_tokens;
+		`,
+	},
 }
 
 // Migrate runs all pending migrations on the database.
