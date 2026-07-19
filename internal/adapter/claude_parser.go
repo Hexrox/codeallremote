@@ -140,11 +140,100 @@ func (p *OutputParser) registerDefaultPatterns() {
 	})
 }
 
-// ParseLine parses a single line of output and returns a normalized event.
+// parseStreamJSONLine recognizes the real Claude Code `--output-format stream-json`
+// NDJSON events documented in ADR-009 and maps them to ParsedEvents. It returns
+// (event, true) when the line is a recognized stream-json event (event may be nil
+// for events we deliberately suppress), and (nil, false) when the line is not a
+// recognized stream-json event so ParseLine can fall back to the regex patterns.
+// ADR-009: the exact field names are pending operator verification against a real
+// claude stream.
+func (p *OutputParser) parseStreamJSONLine(line string) (*ParsedEvent, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || trimmed[0] != '{' {
+		return nil, false
+	}
+
+	var raw struct {
+		Type    string          `json:"type"`
+		Subtype string          `json:"subtype"`
+		Result  string          `json:"result"`
+		Message json.RawMessage `json:"message"`
+		Event   json.RawMessage `json:"event"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
+		return nil, false
+	}
+
+	switch raw.Type {
+	case "system":
+		// Session metadata; the adapter already emits an active status separately.
+		return nil, true
+	case "user":
+		// Typically tool_result echoes; recognize but suppress.
+		return nil, true
+	case "result":
+		if raw.Result != "" {
+			return &ParsedEvent{Type: SignalOutput, Payload: OutputPayload{Content: raw.Result, Stream: "stdout"}}, true
+		}
+		return nil, true
+	case "assistant":
+		var msg struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+				Name string `json:"name"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(raw.Message, &msg); err != nil {
+			return nil, true
+		}
+		var texts []string
+		for _, b := range msg.Content {
+			if b.Type == "text" {
+				texts = append(texts, b.Text)
+			}
+		}
+		if joined := strings.Join(texts, ""); joined != "" {
+			return &ParsedEvent{Type: SignalOutput, Payload: OutputPayload{Content: joined, Stream: "stdout"}}, true
+		}
+		for _, b := range msg.Content {
+			if b.Type == "tool_use" {
+				return &ParsedEvent{Type: SignalDiagnostic, Payload: DiagnosticPayload{Level: "info", Message: "tool_use: " + b.Name}}, true
+			}
+		}
+		return nil, true
+	case "stream_event":
+		var ev struct {
+			Type  string `json:"type"`
+			Delta struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"delta"`
+		}
+		if err := json.Unmarshal(raw.Event, &ev); err != nil {
+			return nil, true
+		}
+		if ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
+			return &ParsedEvent{Type: SignalOutput, Payload: OutputPayload{Content: ev.Delta.Text, Stream: "stdout"}}, true
+		}
+		return nil, true
+	default:
+		// Unknown top-level type: fall back to existing regex patterns.
+		return nil, false
+	}
+}
+
+// ParseLine parses a single line of output and returns a normalized event. It
+// tries the real stream-json events first (A-3, ADR-009), then falls back to the
+// regex-based terminal-text patterns.
 func (p *OutputParser) ParseLine(line string) *ParsedEvent {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil
+	}
+
+	if ev, ok := p.parseStreamJSONLine(line); ok {
+		return ev
 	}
 
 	for _, pattern := range p.knownPatterns {
