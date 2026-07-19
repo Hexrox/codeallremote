@@ -98,13 +98,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go c.runWriter()
 
 	// Reader loop on the main goroutine.
-	h.readLoop(r.Context(), conn, c, deviceID)
+	h.readLoop(r.Context(), conn, c, deviceID, token)
 }
 
 // readLoop reads messages from the client. The first message must be hello;
 // subsequent messages are acknowledgements (read and discarded). A heartbeat
 // (ping/pong) keeps the connection live and detects dead peers.
-func (h *Handler) readLoop(ctx context.Context, conn *websocket.Conn, c *client, deviceID string) {
+func (h *Handler) readLoop(ctx context.Context, conn *websocket.Conn, c *client, deviceID string, token string) {
 	defer func() {
 		// Close the underlying connection first so any blocked read/write on
 		// the peer side fails immediately; then attempt a best-effort close
@@ -132,7 +132,7 @@ func (h *Handler) readLoop(ctx context.Context, conn *websocket.Conn, c *client,
 	pingCtx, pingCancel := context.WithCancel(ctx)
 	defer pingCancel()
 	if hb > 0 {
-		go h.pinger(pingCtx, conn, c, hb)
+		go h.pinger(pingCtx, conn, c, hb, token)
 	}
 
 	// Deadline for the initial hello.
@@ -190,7 +190,7 @@ func (h *Handler) readLoop(ctx context.Context, conn *websocket.Conn, c *client,
 
 // pinger sends periodic ping control frames. If a write fails the peer is
 // gone; the reader will also error and close.
-func (h *Handler) pinger(ctx context.Context, conn *websocket.Conn, c *client, interval time.Duration) {
+func (h *Handler) pinger(ctx context.Context, conn *websocket.Conn, c *client, interval time.Duration, token string) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -198,6 +198,14 @@ func (h *Handler) pinger(ctx context.Context, conn *websocket.Conn, c *client, i
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// Re-check authorization on every heartbeat so a device revoked
+			// mid-connection is dropped promptly rather than keeping its live
+			// socket until it disconnects on its own.
+			if _, err := h.auth.AuthorizeWS(token); err != nil {
+				h.sendErrorAndClose(conn, CloseUnauthorized, "unauthorized")
+				c.close()
+				return
+			}
 			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(h.writeTimeout)); err != nil {
 				c.close()
 				return
