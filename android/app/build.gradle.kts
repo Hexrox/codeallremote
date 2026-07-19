@@ -78,6 +78,13 @@ android {
         // the class compiles and exists, but lint's partial analysis can't resolve
         // it on its classpath. Do not broaden this to abortOnError=false.
         disable += "MissingClass"
+        // InvalidFragmentVersionForActivityResult is a false positive here: this
+        // is a pure Compose ComponentActivity (androidx.activity) with no
+        // androidx.fragment usage, so registerForActivityResult is handled by
+        // the activity's own ActivityResultRegistry — the fragment library
+        // version is irrelevant. Do not add a fragment dependency just to
+        // satisfy this check.
+        disable += "InvalidFragmentVersionForActivityResult"
     }
 }
 
