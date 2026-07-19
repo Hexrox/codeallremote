@@ -136,16 +136,42 @@ func (h *Hub) unsubscribe(c *client) {
 	}
 }
 
-// replayAndSubscribe replays retained events after each cursor, then subscribes
-// the client for live delivery on those sessions. Returns a resync signal
-// per expired cursor so the handler can notify the client.
+// unsubscribeSession removes a client from a single session's subscribers.
+func (h *Hub) unsubscribeSession(c *client, sessionID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if clients, ok := h.subsBySession[sessionID]; ok {
+		delete(clients, c)
+		if len(clients) == 0 {
+			delete(h.subsBySession, sessionID)
+		}
+	}
+}
+
+// replayAndSubscribe delivers retained events after each cursor and switches the
+// client to live delivery without an event-loss window. It subscribes to all
+// requested sessions FIRST (so live events published during replay are captured
+// in the client's buffer), replays retained events directly, then flushes the
+// buffered live events after them. The Android client applies events only when
+// contiguous (advanceIfContiguous), so this ordering — retained [after+1..N]
+// then buffered [N+1..] — is required; duplicates are harmless. Returns a
+// resync signal per expired cursor (which is not subscribed for live delivery).
 func (h *Hub) replayAndSubscribe(ctx context.Context, c *client, cursors []Cursor) []ResyncRequired {
 	var resyncs []ResyncRequired
+
+	c.startBuffering()
+
+	// Subscribe to ALL requested sessions first so live events published during
+	// replay are captured (Publish routes only to subscribers).
+	for _, cur := range cursors {
+		h.subscribe(c, cur.SessionID)
+	}
 
 	for _, cur := range cursors {
 		result, err := h.journal.Replay(cur.SessionID, cur.After, h.replayLimit)
 		if err != nil {
 			h.logger.Warn("ws replay error", "session_id", cur.SessionID, "error", err)
+			h.unsubscribeSession(c, cur.SessionID)
 			continue
 		}
 
@@ -153,13 +179,15 @@ func (h *Hub) replayAndSubscribe(ctx context.Context, c *client, cursors []Curso
 			resyncs = append(resyncs, ResyncRequired{
 				Type: "resync_required", SessionID: cur.SessionID, After: cur.After,
 			})
-			// Do not subscribe: the client must resync via REST first.
+			// The client must resync via REST first; do not serve live events.
+			h.unsubscribeSession(c, cur.SessionID)
 			continue
 		}
 
-		// Send retained events first.
+		// Retained events go directly to sendCh, bypassing the buffer, so they
+		// land before any buffered live event.
 		for _, ev := range result.Events {
-			c.send(Envelope{
+			c.sendDirect(Envelope{
 				Type:       ev.Type,
 				MessageID:  ev.MessageID,
 				OccurredAt: ev.OccurredAt,
@@ -168,11 +196,11 @@ func (h *Hub) replayAndSubscribe(ctx context.Context, c *client, cursors []Curso
 				Payload:    ev.Payload,
 			})
 		}
-
-		// Subscribe for live delivery. New events between replay and subscribe
-		// may be delivered twice; clients deduplicate by (session_id, sequence).
-		h.subscribe(c, cur.SessionID)
 	}
+
+	// Deliver the live events captured during the replay window, in order, then
+	// go live.
+	c.flushAndStopBuffering()
 
 	return resyncs
 }

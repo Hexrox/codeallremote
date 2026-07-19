@@ -30,6 +30,15 @@ type client struct {
 	// writeFunc writes an envelope to the underlying connection. Set by the
 	// handler when it upgrades the socket.
 	writeFunc func(Envelope) error
+
+	// bufMu guards the replay buffer. While buffering, live events (via send)
+	// accumulate in buffer instead of going to sendCh, so replayAndSubscribe
+	// can deliver retained events first and then flush live events captured
+	// during the replay window — eliminating the drop window while keeping
+	// delivery contiguous and in order.
+	bufMu     sync.Mutex
+	buffering bool
+	buffer    []Envelope
 }
 
 // newClient creates a client with a bounded send channel.
@@ -58,6 +67,15 @@ func (c *client) send(env Envelope) {
 		return
 	default:
 	}
+	// While replaying, capture live events in the buffer instead of delivering
+	// them out of order ahead of the retained events.
+	c.bufMu.Lock()
+	if c.buffering {
+		c.buffer = append(c.buffer, env)
+		c.bufMu.Unlock()
+		return
+	}
+	c.bufMu.Unlock()
 	select {
 	case c.sendCh <- env:
 	case <-c.closed:
@@ -65,6 +83,53 @@ func (c *client) send(env Envelope) {
 		// Buffer full: trigger backpressure disconnect.
 		c.markSlow()
 	}
+}
+
+// sendDirect delivers an envelope to sendCh, bypassing the replay buffer. Used
+// for retained (replay) events, which must land before any buffered live event.
+func (c *client) sendDirect(env Envelope) {
+	select {
+	case <-c.closed:
+		return
+	default:
+	}
+	select {
+	case c.sendCh <- env:
+	case <-c.closed:
+	default:
+		c.markSlow()
+	}
+}
+
+// startBuffering makes subsequent send() calls accumulate live events instead
+// of delivering them, so replayAndSubscribe controls ordering.
+func (c *client) startBuffering() {
+	c.bufMu.Lock()
+	c.buffering = true
+	c.buffer = nil
+	c.bufMu.Unlock()
+}
+
+// flushAndStopBuffering delivers the buffered live events (in arrival = sequence
+// order) to sendCh, then leaves buffering mode so later sends go direct. The
+// per-envelope delivery is non-blocking, so holding bufMu during the flush
+// cannot deadlock.
+func (c *client) flushAndStopBuffering() {
+	c.bufMu.Lock()
+	defer c.bufMu.Unlock()
+	for _, env := range c.buffer {
+		select {
+		case c.sendCh <- env:
+		case <-c.closed:
+			c.buffer = nil
+			c.buffering = false
+			return
+		default:
+			c.markSlow()
+		}
+	}
+	c.buffer = nil
+	c.buffering = false
 }
 
 // markSlow flags the client as slow and initiates a clean close with the
