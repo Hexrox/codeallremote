@@ -386,9 +386,17 @@ func (a *ClaudeAdapter) Observe(ctx context.Context, run *adapter.RunHandle) <-c
 }
 
 // DecideApproval records an approval decision by writing it to the agent
-// process stdin. Claude Code's stream-JSON approval protocol accepts a JSON
-// line {"decision":"approve"|"deny"} on stdin when a permission request is
-// pending.
+// process stdin as a JSON line {"decision":"approve"|"deny"}.
+//
+// WARNING (ADR-009, 2026-07-19): this stdin decision protocol is NOT how real
+// Claude Code handles non-interactive permissions. The real mechanism is
+// `--permission-prompt-tool <mcp-tool>` (Claude calls an MCP tool for the
+// decision) or static `--allowedTools`/`--permission-mode`. Against a real
+// `claude` this write is a no-op, so the Claude adapter's approvals are not yet
+// functional. Replacing this with the MCP permission-prompt flow changes the
+// approval trust boundary and is a separate, reviewed increment — see
+// adr/ADR-009-claude-cli-interface.md. The stdin path is retained only so the
+// deterministic `sh` rig continues to exercise the surrounding plumbing.
 //
 // The adapter acknowledges the write but does NOT synthesize an
 // approval.resolved event — the run's actual outcome arrives through Observe
