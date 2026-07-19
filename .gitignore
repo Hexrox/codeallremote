@@ -55,3 +55,7 @@ android/local.properties
 # Local secrets (never commit)
 token.md
 TASKER.md
+
+# Release signing secrets (never commit)
+keystore.properties
+android/keystore.properties
