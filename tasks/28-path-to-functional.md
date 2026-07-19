@@ -162,3 +162,23 @@ corrected accordingly.
 
 Remaining: **E-3** (subscribe-before-replay — needs server-side buffering
 design), **E-6** (real Codex adapter), **A-1..A-3** (need a real `claude`).
+
+### Update (2026-07-19, later)
+
+Also completed this session:
+- **E-3** subscribe-before-replay (FR-6): server-side buffering closes the
+  event-loss window while preserving contiguous delivery. `-race -count=10`.
+- **E-6** real process-spawning Codex adapter (FR-9), driven by an `sh` rig.
+- **B-1 follow-up**: MainActivity wires `CarConnectionService.clientProvider`,
+  requests POST_NOTIFICATIONS, and starts the foreground service — gated on a
+  really-paired account (the placeholder does not start it, protecting the
+  instrumented test and avoiding a doomed loop). Green on android CI incl. the
+  emulator.
+
+**All [code-now] items in tasks/28 are now done and green in hosted CI**
+(E-1..E-6, D-1, B-1 increment 1 + follow-up). Remaining work is a different
+class: **A-1..A-3** need a real `claude` binary (operator smoke test), and
+**C / D-2 / B-2** are operator/deployment (homelab, WireGuard/VPS, APK install,
+optional server push). The B-1 service currently activates only once real
+pairing sets `pairedAt`; wiring a real pairing flow is the next functional step
+toward "steer Claude from the phone".
