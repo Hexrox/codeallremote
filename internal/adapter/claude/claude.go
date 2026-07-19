@@ -185,17 +185,22 @@ func (a *ClaudeAdapter) pump(ctx context.Context, run *claudeRun) {
 
 	var pending []byte
 	outCh := run.proc.OutputChannel()
+	errCh := run.proc.ErrorChannel()
 
-	for {
+	// One goroutine multiplexes both streams so it remains the sole owner of
+	// run.signals (closed via the deferred close), avoiding any send-on-closed
+	// race. stdout is parsed as stream-json; stderr is emitted raw (it is not
+	// JSON) so it is neither dropped nor fed to the parser. Completion fires
+	// once both streams are drained; the wrapper closes both channels together
+	// on process exit, so the timing is preserved.
+	for outCh != nil || errCh != nil {
 		select {
 		case <-ctx.Done():
 			return
 		case data, ok := <-outCh:
 			if !ok {
-				// Output drained; flush any pending partial line and emit completion.
-				a.flush(run, pending)
-				a.emitCompletion(run)
-				return
+				outCh = nil
+				continue
 			}
 			// Redact secrets before parsing (defensive; secrets are not in output
 			// normally, but a leak should never reach events/logs).
@@ -204,8 +209,29 @@ func (a *ClaudeAdapter) pump(ctx context.Context, run *claudeRun) {
 			for i := range events {
 				a.emitParsed(run, &events[i])
 			}
+		case data, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+			a.emitStderr(run, data)
 		}
 	}
+
+	// Both streams drained; flush any pending partial line and emit completion.
+	a.flush(run, pending)
+	a.emitCompletion(run)
+}
+
+// emitStderr surfaces a raw stderr chunk as an output signal tagged
+// stream="stderr" (never parsed as stream-json).
+func (a *ClaudeAdapter) emitStderr(run *claudeRun, data []byte) {
+	a.send(run, adapter.AdapterSignal{
+		Type:      adapter.SignalOutput,
+		SessionID: run.handle.SessionID,
+		Timestamp: time.Now(),
+		Payload:   mustMarshal(adapter.OutputPayload{Content: string(data), Stream: "stderr"}),
+	})
 }
 
 // flush parses any remaining buffered bytes (final, isComplete=true).

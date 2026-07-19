@@ -347,3 +347,43 @@ func TestClaudeAdapter_PayloadJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestClaudeAdapter_Start_EmitsStderr verifies stderr is surfaced as a raw
+// output signal (stream="stderr"), not dropped and not parsed as stream-json.
+func TestClaudeAdapter_Start_EmitsStderr(t *testing.T) {
+	skipNonUnix(t)
+	a := newTestAdapter()
+	a.SetExecPath("sh")
+	sess := &domain.Session{ID: "s1", WorkspaceID: "ws", AdapterID: "claude-code", State: domain.SessionStateActive}
+	handle, err := a.Start(context.Background(), sess, adapter.Input{
+		WorkspacePath: "/tmp",
+		Args:          []string{"-c", "echo to-stderr >&2"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer a.Interrupt(context.Background(), handle)
+
+	sigs := a.Observe(context.Background(), handle)
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for stderr output signal")
+		case sig, ok := <-sigs:
+			if !ok {
+				t.Fatal("signal channel closed before stderr was observed")
+			}
+			if sig.Type != adapter.SignalOutput {
+				continue
+			}
+			var p adapter.OutputPayload
+			if err := json.Unmarshal(sig.Payload, &p); err != nil {
+				continue
+			}
+			if p.Stream == "stderr" && strings.Contains(p.Content, "to-stderr") {
+				return
+			}
+		}
+	}
+}
