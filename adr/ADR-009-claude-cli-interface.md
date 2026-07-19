@@ -155,3 +155,29 @@ and wire-format parsing, so it still confirms the plumbing.
 
 **Net:** A-1 and A-3 are verified (format-correct against 2.1.214); they are no
 longer drafts pending format verification. A-2 needs an authenticated session.
+
+## A-2 live findings + A-1 correction (2026-07-19, authenticated Pro session)
+
+Ran an **authenticated** `claude` (Pro/OAuth login, in a scratch subfolder) —
+real completions succeed (a "pong" prompt returned `result.is_error=false`,
+`result:"pong"`), confirming A-1/A-3 end to end, not just format.
+
+- **A-1 correction — `--bare` REMOVED.** `--bare` skips OAuth/keychain reads, so
+  with it the child is "not logged in" (`apiKeySource:"none"`); without it the
+  Pro login authenticates and the run completes. The adapter must NOT add
+  `--bare` (it would break OAuth/login operators). `buildArgs` now omits it;
+  operators using `ANTHROPIC_API_KEY` may add `--bare` explicitly.
+- **A-2 mechanism — confirmed.** In headless `-p`, tools **auto-run with no
+  prompt** under `--permission-mode default` AND `manual` (`permission_denials:
+  []`, the Bash tool executed). So the adapter's terminal-text approval
+  detection never fires — there is nothing to intercept by parsing output. The
+  only interception point is **`--permission-prompt-tool <tool>`**, which
+  claude 2.1.214 accepts (it works despite being under-documented in `--help`)
+  and which requires an MCP server (`--mcp-config`) exposing that tool.
+- **A-2 implementation (deferred, separate increment):** CAR must run an MCP
+  server exposing a permission-prompt tool, launch `claude …
+  --permission-prompt-tool <name> --mcp-config <cfg>`, and route each permission
+  request from that tool into the `ApprovalBridge` → phone → return the decision
+  as the tool result. This is a new component and a new trust boundary, so per
+  `CLAUDE.md` it is its own reviewed ADR/implementation increment. Its end-to-end
+  test needs an authenticated session (available) plus the MCP server (to build).

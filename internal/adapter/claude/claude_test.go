@@ -401,7 +401,7 @@ func containsArg(slice []string, s string) bool {
 // gets the multi-turn stream-json flags, while the sh test rig is untouched.
 func TestBuildArgs_ClaudeAddsStreamJSONFlags(t *testing.T) {
 	args := buildArgs("/usr/local/bin/claude", adapter.Input{})
-	for _, w := range []string{"-p", "--output-format", "stream-json", "--input-format", "--verbose", "--bare"} {
+	for _, w := range []string{"-p", "--output-format", "stream-json", "--input-format", "--verbose"} {
 		if !containsArg(args, w) {
 			t.Errorf("buildArgs(claude) missing %q; got %v", w, args)
 		}

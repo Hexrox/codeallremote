@@ -485,9 +485,12 @@ func buildArgs(execPath string, input adapter.Input) []string {
 		if !hasOutputFormat {
 			// ADR-009: --input-format stream-json is required for multi-turn
 			// stdin prompts (without it -p reads stdin as a single one-shot
-			// prompt); --bare gives deterministic startup. Flags verified
-			// against claude 2.1.214.
-			args = append(args, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--bare")
+			// prompt). Verified against claude 2.1.214 with a live completion.
+			// NOTE: --bare is intentionally NOT added — it skips OAuth/keychain
+			// reads, so a Pro/login (non-API-key) operator would be "not logged
+			// in". Operators who authenticate via ANTHROPIC_API_KEY may add
+			// --bare themselves for deterministic startup.
+			args = append(args, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose")
 		}
 	}
 	// InitialPrompt is intentionally NOT appended to argv; see Start.
