@@ -78,3 +78,38 @@ required for the permission tool to be consulted.
   (the verifiable server core) does not change runtime behavior on its own.
 - End-to-end verification uses a real authenticated `claude` (available) with
   the Go server replacing the Python stub used to capture this protocol.
+
+## Increment 2/3 design (how the decision reaches the phone)
+
+The permission decision must flow through the EXISTING approval architecture,
+not a new side-channel, so the phone/audit/expiry semantics are reused. Chosen
+flow (fits the adapter→app→ApprovalBridge path):
+
+1. **Adapter owns the socket.** When the Claude adapter starts a real `claude`
+   run it: creates a per-run unix socket, writes an `--mcp-config` naming
+   `cmd/car-mcp-perm` with `--socket <path> --session <id>`, and passes
+   `--permission-prompt-tool mcp__car__approve --mcp-config <cfg>` (Increment 3).
+2. **car-mcp-perm is a thin client.** Its Decide callback dials the socket,
+   sends `{session, tool_name, input, tool_use_id}` (one JSON line), and blocks
+   reading one JSON reply `{allow, message}` (Increment 2). No policy lives here
+   — it is pure transport, still fail-closed if the socket is unavailable.
+3. **The adapter turns a socket request into a normal approval.** On a socket
+   request it emits a `SignalApprovalRequest` (approval id = `tool_use_id`,
+   category from `tool_name`, human context from `input`) and PARKS the pending
+   socket reply keyed by `tool_use_id`. The app routes the signal to the
+   `ApprovalBridge` → phone exactly as today.
+4. **DecideApproval resolves the parked request.** `App.ResolveApproval` calls
+   `adapter.DecideApproval(runID, tool_use_id, approved)`; the adapter looks up
+   the parked socket reply for that id and writes `{allow, message}` back over
+   the socket → car-mcp-perm returns it to claude. This REPLACES the bogus stdin
+   write with a real resolution, and closes ADR-009's A-2 gap. Approval expiry /
+   cancel (E-4) map to a fail-closed deny on the socket.
+
+Properties: loopback unix socket only; the tool name + input become approval
+context (same class of data as existing approvals, no new secrets in logs);
+fail-closed on any transport error, timeout, or expiry. Verified end to end with
+a real authenticated `claude` once wired.
+
+Increment status: **1 done + verified** (mcpperm library, car-mcp-perm skeleton).
+**2** = socket request/response transport (reusable, unit-testable). **3** =
+adapter socket owner + mcp-config generation + DecideApproval rewrite.
