@@ -393,15 +393,17 @@ func (a *ClaudeAdapter) Observe(ctx context.Context, run *adapter.RunHandle) <-c
 // DecideApproval records an approval decision by writing it to the agent
 // process stdin as a JSON line {"decision":"approve"|"deny"}.
 //
-// WARNING (ADR-009, 2026-07-19): this stdin decision protocol is NOT how real
-// Claude Code handles non-interactive permissions. The real mechanism is
-// `--permission-prompt-tool <mcp-tool>` (Claude calls an MCP tool for the
-// decision) or static `--allowedTools`/`--permission-mode`. Against a real
-// `claude` this write is a no-op, so the Claude adapter's approvals are not yet
-// functional. Replacing this with the MCP permission-prompt flow changes the
-// approval trust boundary and is a separate, reviewed increment — see
-// adr/ADR-009-claude-cli-interface.md. The stdin path is retained only so the
-// deterministic `sh` rig continues to exercise the surrounding plumbing.
+// WARNING (ADR-009, verified vs claude 2.1.214): this stdin decision protocol
+// is NOT how Claude Code handles non-interactive permissions — against a real
+// `claude` this write is a no-op, so the adapter's approvals are not yet
+// functional. The real permission surface is `--permission-mode`,
+// `--allowedTools`/`--disallowedTools`, and MCP tools marked
+// `_meta["anthropic/requiresUserInteraction"]` (the documented
+// `--permission-prompt-tool` was not present in 2.1.214's --help). Wiring an MCP
+// permission tool into the ApprovalBridge changes the approval trust boundary
+// and is a separate, reviewed increment needing an authenticated session — see
+// adr/ADR-009-claude-cli-interface.md §A-2. The stdin path is retained only so
+// the deterministic `sh` rig continues to exercise the surrounding plumbing.
 //
 // The adapter acknowledges the write but does NOT synthesize an
 // approval.resolved event — the run's actual outcome arrives through Observe
@@ -483,8 +485,8 @@ func buildArgs(execPath string, input adapter.Input) []string {
 		if !hasOutputFormat {
 			// ADR-009: --input-format stream-json is required for multi-turn
 			// stdin prompts (without it -p reads stdin as a single one-shot
-			// prompt); --bare gives deterministic startup. Pending an operator
-			// smoke-test against a real claude binary.
+			// prompt); --bare gives deterministic startup. Flags verified
+			// against claude 2.1.214.
 			args = append(args, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--bare")
 		}
 	}
@@ -493,9 +495,9 @@ func buildArgs(execPath string, input adapter.Input) []string {
 }
 
 // streamJSONUserMessage wraps a prompt as one newline-delimited stream-json
-// user message for `claude --input-format stream-json`. ADR-009: the exact
-// top-level "type" token ("user") and content-block schema are pending operator
-// verification against a real claude binary.
+// user message for `claude --input-format stream-json`. Verified accepted by
+// claude 2.1.214 (ADR-009 §Verification): top-level "type" is "user" and the
+// content-block schema below is correct.
 func streamJSONUserMessage(prompt string) []byte {
 	type textBlock struct {
 		Type string `json:"type"`

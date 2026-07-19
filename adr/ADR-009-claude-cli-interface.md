@@ -116,3 +116,42 @@ design/ADR increment and an operator smoke-test.
   contract.
 - CAR-facing REST/WS/approval contracts are unaffected by A-1/A-3; A-2 changes
   only how the adapter talks to `claude`, not how the phone talks to CAR.
+
+## Verification against a real binary (2026-07-19, claude 2.1.214)
+
+Ran the installed `claude` (`/usr/local/bin/claude`, v2.1.214) to verify the
+interface. The environment was **not logged in** (`apiKeySource: "none"`), so
+turns end in `authentication_failed` — but that failure is downstream of flag
+and wire-format parsing, so it still confirms the plumbing.
+
+- **A-1 flags — CONFIRMED.** `--help` lists `--input-format {text,stream-json}`,
+  `--output-format {text,json,stream-json}`, `-p/--print`, `--verbose`, `--bare`,
+  `--include-partial-messages`, `--mcp-config`. The adapter's auto-args are
+  correct.
+- **A-1 stdin envelope — CONFIRMED.** Piping
+  `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"…"}]}}`
+  into `claude -p --input-format stream-json --output-format stream-json
+  --verbose --bare` is **accepted** (the run reaches the auth check and emits a
+  normal system→assistant→result stream; no parse/format error). The top-level
+  token is `"user"` (not `"user_message"`). The A-1 implementation is verified;
+  the only remaining end-to-end gap is provider auth (operator supplies
+  `ANTHROPIC_API_KEY`/login), not the format.
+- **A-3 output events — CONFIRMED.** Real output lines match the parser exactly:
+  `{"type":"system","subtype":"init",…}` (suppressed),
+  `{"type":"assistant","message":{"content":[{"type":"text","text":"…"}],…}}`
+  (→ SignalOutput from joined text), and
+  `{"type":"result","subtype":"success","result":"…",is_error,duration_ms,…}`
+  (→ SignalOutput from `result`). Field names/shapes are as implemented.
+- **A-2 approvals — still open.** `--permission-prompt-tool` is **not present**
+  in this CLI version's `--help`; the available permission surface is
+  `--permission-mode` (`acceptEdits`, `auto`, `manual`, `bypassPermissions`, …),
+  `--allowedTools`/`--disallowedTools`, and `--dangerously-skip-permissions`,
+  plus MCP tools marked `_meta["anthropic/requiresUserInteraction"]`. A real
+  interactive-approval round-trip needs an authenticated session to trigger a
+  tool-permission prompt, so A-2 remains a separate increment: confirm the
+  mechanism on an authenticated session, then implement the MCP-tool /
+  requiresUserInteraction flow into the ApprovalBridge. The stdin
+  `{"decision":…}` path stays a no-op until then.
+
+**Net:** A-1 and A-3 are verified (format-correct against 2.1.214); they are no
+longer drafts pending format verification. A-2 needs an authenticated session.

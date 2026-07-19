@@ -145,8 +145,8 @@ func (p *OutputParser) registerDefaultPatterns() {
 // (event, true) when the line is a recognized stream-json event (event may be nil
 // for events we deliberately suppress), and (nil, false) when the line is not a
 // recognized stream-json event so ParseLine can fall back to the regex patterns.
-// ADR-009: the exact field names are pending operator verification against a real
-// claude stream.
+// Event shapes verified against claude 2.1.214 output (ADR-009 §Verification):
+// system/init, assistant.message.content[].text, and result.result.
 func (p *OutputParser) parseStreamJSONLine(line string) (*ParsedEvent, bool) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || trimmed[0] != '{' {
