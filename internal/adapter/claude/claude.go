@@ -50,6 +50,10 @@ type claudeRun struct {
 	signals   chan adapter.AdapterSignal
 	done      chan struct{}
 	startedAt time.Time
+	// streamJSONInput is true when the child is the real claude CLI (started
+	// with --input-format stream-json), so stdin prompts must be wrapped as
+	// stream-json user messages. The sh test rig leaves this false (raw text).
+	streamJSONInput bool
 }
 
 // New creates a Claude Code adapter. execPath is the `claude` executable path;
@@ -136,11 +140,12 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 	}
 
 	run := &claudeRun{
-		handle:    handle,
-		proc:      proc,
-		signals:   make(chan adapter.AdapterSignal, 256),
-		done:      make(chan struct{}),
-		startedAt: handle.StartedAt,
+		handle:          handle,
+		proc:            proc,
+		signals:         make(chan adapter.AdapterSignal, 256),
+		done:            make(chan struct{}),
+		startedAt:       handle.StartedAt,
+		streamJSONInput: strings.Contains(filepath.Base(execPath), "claude"),
 	}
 
 	a.mu.Lock()
@@ -151,7 +156,7 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 	// visible in `ps` and can be parsed as a flag). Best-effort: if the write
 	// fails the run still started; the operator may submit the prompt again.
 	if input.InitialPrompt != "" {
-		_, _ = proc.WriteInputString(input.InitialPrompt)
+		_ = writePrompt(run.proc, run.streamJSONInput, input.InitialPrompt)
 	}
 
 	// Status transition: starting -> active. This is enqueued BEFORE the pump
@@ -353,7 +358,7 @@ func (a *ClaudeAdapter) SubmitInput(ctx context.Context, run *adapter.RunHandle,
 	if r == nil {
 		return adapter.Accepted{Accepted: false, Message: "run not found"}
 	}
-	if _, err := r.proc.WriteInputString(prompt); err != nil {
+	if err := writePrompt(r.proc, r.streamJSONInput, prompt); err != nil {
 		return adapter.Accepted{Accepted: false, Message: err.Error()}
 	}
 	return adapter.Accepted{Accepted: true}
@@ -476,11 +481,55 @@ func buildArgs(execPath string, input adapter.Input) []string {
 			}
 		}
 		if !hasOutputFormat {
-			args = append(args, "-p", "--output-format", "stream-json", "--verbose")
+			// ADR-009: --input-format stream-json is required for multi-turn
+			// stdin prompts (without it -p reads stdin as a single one-shot
+			// prompt); --bare gives deterministic startup. Pending an operator
+			// smoke-test against a real claude binary.
+			args = append(args, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--bare")
 		}
 	}
 	// InitialPrompt is intentionally NOT appended to argv; see Start.
 	return args
+}
+
+// streamJSONUserMessage wraps a prompt as one newline-delimited stream-json
+// user message for `claude --input-format stream-json`. ADR-009: the exact
+// top-level "type" token ("user") and content-block schema are pending operator
+// verification against a real claude binary.
+func streamJSONUserMessage(prompt string) []byte {
+	type textBlock struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	type msg struct {
+		Role    string      `json:"role"`
+		Content []textBlock `json:"content"`
+	}
+	type envelope struct {
+		Type    string `json:"type"`
+		Message msg    `json:"message"`
+	}
+	b, err := jsonMarshal(envelope{
+		Type:    "user",
+		Message: msg{Role: "user", Content: []textBlock{{Type: "text", Text: prompt}}},
+	})
+	if err != nil {
+		return nil
+	}
+	return append(b, '\n')
+}
+
+// writePrompt delivers a prompt to the child's stdin, as a stream-json user
+// message for the real claude CLI or as raw text for the sh test rig.
+func writePrompt(proc *wrapper.ProcessWrapper, streamJSON bool, prompt string) error {
+	if streamJSON {
+		if line := streamJSONUserMessage(prompt); line != nil {
+			_, err := proc.WriteInput(line)
+			return err
+		}
+	}
+	_, err := proc.WriteInputString(prompt)
+	return err
 }
 
 // buildEnv assembles the child process environment: start from the server's

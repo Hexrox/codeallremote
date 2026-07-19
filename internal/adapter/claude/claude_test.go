@@ -387,3 +387,55 @@ func TestClaudeAdapter_Start_EmitsStderr(t *testing.T) {
 		}
 	}
 }
+
+func containsArg(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// TestBuildArgs_ClaudeAddsStreamJSONFlags checks A-1 (ADR-009): the claude CLI
+// gets the multi-turn stream-json flags, while the sh test rig is untouched.
+func TestBuildArgs_ClaudeAddsStreamJSONFlags(t *testing.T) {
+	args := buildArgs("/usr/local/bin/claude", adapter.Input{})
+	for _, w := range []string{"-p", "--output-format", "stream-json", "--input-format", "--verbose", "--bare"} {
+		if !containsArg(args, w) {
+			t.Errorf("buildArgs(claude) missing %q; got %v", w, args)
+		}
+	}
+	shArgs := buildArgs("sh", adapter.Input{Args: []string{"-c", "echo hi"}})
+	if len(shArgs) != 2 || shArgs[0] != "-c" || shArgs[1] != "echo hi" {
+		t.Errorf("buildArgs(sh) = %v; want exactly [-c echo hi]", shArgs)
+	}
+}
+
+// TestStreamJSONUserMessage_Shape proves the stdin envelope is valid JSON with
+// the documented shape and proper escaping (A-1, ADR-009).
+func TestStreamJSONUserMessage_Shape(t *testing.T) {
+	b := streamJSONUserMessage(`hello "world"`)
+	if len(b) == 0 || b[len(b)-1] != '\n' {
+		t.Fatalf("expected trailing newline; got %q", b)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b[:len(b)-1], &m); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v; line=%q", err, b)
+	}
+	if m["type"] != "user" {
+		t.Errorf("m[type] = %v; want user", m["type"])
+	}
+	msg, ok := m["message"].(map[string]any)
+	if !ok || msg["role"] != "user" {
+		t.Fatalf("message.role wrong: %v", m["message"])
+	}
+	content, ok := msg["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("content not a 1-element array: %T", msg["content"])
+	}
+	block, _ := content[0].(map[string]any)
+	if block["text"] != `hello "world"` {
+		t.Errorf("content[0].text = %v; want %q", block["text"], `hello "world"`)
+	}
+}
