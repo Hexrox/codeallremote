@@ -1,16 +1,23 @@
 package io.codeallremote.car.android
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.codeallremote.car.android.data.CarClient
 import io.codeallremote.car.android.data.CarRepository
+import io.codeallremote.car.android.notifications.CarConnectionService
 import io.codeallremote.car.android.store.HybridCursorStore
 import io.codeallremote.car.android.store.PersistedCursorPersistence
 import io.codeallremote.car.android.store.PersistedCursorStore
@@ -22,7 +29,8 @@ import io.codeallremote.car.android.ui.theme.CarTheme
 
 /**
  * Single-activity host. Deep links are validated by the navigation graph
- * before private content is rendered (docs/18 §Navigation model).
+ * before private content is rendered (docs/18 §Navigation model). On launch it
+ * also wires the background connection service (foreground WS + notifications).
  */
 class MainActivity : ComponentActivity() {
 
@@ -30,12 +38,34 @@ class MainActivity : ComponentActivity() {
         homeViewModelFactory(applicationContext, localServerAccount())
     }
 
+    private val notifPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* granted or not; nothing else to do */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Validate the incoming deep link (car:// session/approval) against the
         // server/token before rendering private content; the NavHost handles
         // authorization in addition to this gate.
         DeepLinkGuard.validate(intent)
+
+        // Wire the background connection service: supply it a client factory and
+        // start it only for a really-paired account, so events and approvals
+        // arrive while the app is backgrounded. The unpaired local placeholder
+        // (empty pairedAt) does not start a service — that avoids a doomed
+        // reconnect loop against a placeholder host before pairing exists.
+        CarConnectionService.clientProvider = { ctx, serverId -> buildCarClientFor(ctx, serverId) }
+        val account = localServerAccount()
+        if (account.pairedAt.isNotEmpty()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, CarConnectionService::class.java).putExtra(CarConnectionService.EXTRA_SERVER_ID, account.id)
+            )
+        }
 
         setContent {
             CarTheme {
