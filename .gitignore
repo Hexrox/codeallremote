@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-car
+/car
 cmd/server/car
 # Compiled carctl CLI (build product)
 /carctl

@@ -42,5 +42,12 @@
                 <data android:scheme="car" />
             </intent-filter>
         </activity>
+
+        <!-- Foreground service that keeps a WS connection alive in the
+             background and posts notifications for approvals/completions. -->
+        <service
+            android:name=".notifications.CarConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>
