@@ -1,9 +1,21 @@
 # CAR — Raport dla reviewera (release decision)
 
-**Data:** 2026-07-18
-**Status:** ✅ `accepted` — APPROVED by owner (admin@daremnytrud.pl), 2026-07-18 (oba workflowy green na finalnym commicie `25bfc6d`)
-**Drzewo:** commit `25bfc6d6e59b1b2bbe3f1ca03dac30cb90b18a17` (branch `main`, `github.com/Hexrox/codeallremote`)
-**Hosted CI:** ci [run #8](https://github.com/Hexrox/codeallremote/actions/runs/29654550009) ✅ · android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020) ✅ (incl. instrumented emulator)
+**Data:** 2026-07-18 (Android evidence corrected 2026-07-19)
+**Status:** ✅ `accepted` — APPROVED by owner (admin@daremnytrud.pl), 2026-07-18
+**Server drzewo (Go):** commit `25bfc6d` (ci [run #8](https://github.com/Hexrox/codeallremote/actions/runs/29654550009) ✅)
+**Android genuine verification:** commit `309aff3` — android [run 29679771553](https://github.com/Hexrox/codeallremote/actions/runs/29679771553) ✅
+
+> **⚠️ CORRECTION (2026-07-19).** All Android CI runs through `25bfc6d`
+> (including run #4) were **vacuous**: an unanchored `.gitignore` rule `car`
+> matched the `car` component of the Kotlin package `io/codeallremote/car/…`
+> and excluded ALL 43 Android source + test files from the repo. So the gate
+> compiled a Kotlin-source-less app and `connectedDebugAndroidTest` ran ZERO
+> tests — the "6 methods executed / 29 JVM tests" claims below were unverified.
+> Fixed in `309aff3` (ignore anchored to `/car`; full source committed). The
+> FIRST genuine Android run is 29679771553 on `309aff3`: gate compiled the real
+> Kotlin, JVM unit tests ran, and the emulator log shows "Starting 6 tests …
+> Finished 6 tests … BUILD SUCCESSFUL". Inline `25bfc6d` emulator claims below
+> are superseded by this note.
 
 Ten dokument jest samodzielnym źródłem kontekstu — rekomendacja release może zostać podjęta bez odtwarzania historii projektu. Zawiera: zakres, dowody z bramek (gates), rozliczenie przeglądu (review), impact na kontrakty, rozważania dotyczące bezpieczeństwa, znane ograniczenia i blockers.
 
@@ -43,7 +55,7 @@ CAR (Code All Remote) — self-hostowany, Android-first control plane do nadzoro
 ### Android (JDK 17, SDK 35)
 
 Wszystkie poniższe potwierdzone green w hosted CI na finalnym commicie
-`25bfc6d` (android [run #4](https://github.com/Hexrox/codeallremote/actions/runs/29654550020)):
+`309aff3` (android [run 29679771553](https://github.com/Hexrox/codeallremote/actions/runs/29679771553) — the first run with the real source; see the CORRECTION note above):
 
 | Area | Komenda | Wynik |
 |---|---|---|
@@ -51,11 +63,12 @@ Wszystkie poniższe potwierdzone green w hosted CI na finalnym commicie
 | Testy JVM | `./gradlew testDebugUnitTest --no-daemon` | ✅ **29 testów** |
 | Lint | `./gradlew lintDebug --no-daemon` (`MissingClass` false-positive disabled — CI-04) | ✅ success |
 | APK | `./gradlew assembleDebug --no-daemon` | ✅ app-debug.apk |
-| **Instrumented (emulator)** | `./gradlew connectedDebugAndroidTest --no-daemon` | ✅ **success** — 6 metod (HomeComposeTest ×2, DeepLinkGuardTest ×4) na sprzętowo akcelerowanym emulatorze |
+| **Instrumented (emulator)** | `./gradlew connectedDebugAndroidTest --no-daemon` | ✅ **success on `309aff3`** — emulator log: "Starting 6 tests … Finished 6 tests" (HomeComposeTest ×2, DeepLinkGuardTest ×4) genuinely executed |
 
 **Release blocker: NONE.** Instrumented emulator job wykonał się i przeszedł
-green na zgłoszonym commicie `25bfc6d`. Historia: pierwszy green emulatora na
-`8538bce`; przypięty do finalnego `25bfc6d` (drzewo Androida niezmienione).
+genuinely green na commicie `309aff3` (first run with the real Android source
+in the repo). Prior runs through `25bfc6d` were vacuous — see the CORRECTION
+note at the top.
 
 ### CI workflows
 - `.github/workflows/ci.yml` — Go: format, vet, build, test -race, schema, docs, govulncheck, migracje, backup drill, reproducible release artifact.

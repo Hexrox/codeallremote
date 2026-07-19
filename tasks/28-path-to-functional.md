@@ -135,3 +135,30 @@ important for the product promise but does not block a first bring-up.
 
 The **[code-now]** items (B-1, D-1, E-1..E-5) can proceed in parallel with the
 operator-dependent A/C work.
+
+---
+
+## Progress log (2026-07-19)
+
+Delivered this session (each: design → code+tests via Tasker → review + `go
+test -race` / Android CI → push), all green in hosted CI on real source:
+- **E-1** persist access tokens in SQLite (survive restart).
+- **E-4** cancel pending approvals on run completion (FR-8).
+- **E-5** re-check device authorization on WS heartbeat (FR-2).
+- **E-2** drain + surface stderr in the claude adapter pump (CI-05 follow-up).
+- **D-1** conditional release signing config.
+- **B-1** (first increment) NotificationMapper (unit-tested) + CarConnectionService
+  foreground service + manifest. **Follow-up:** wire the service into the app
+  lifecycle (start on connect, set `CarConnectionService.clientProvider`,
+  request POST_NOTIFICATIONS at runtime); optional B-2 push.
+
+**Critical fix (309aff3):** the `.gitignore` rule `car` (for the Go binary) was
+unanchored and excluded the entire Android Kotlin package `io/codeallremote/car/…`
+— all 43 source + test files — so every prior Android CI run was vacuous (0
+tests). Anchored to `/car`; committed the full Android source. The first genuine
+Android CI run (29679771553 on 309aff3) compiles the real Kotlin and executes
+the real JVM + 6 instrumented tests. Evidence in REVIEWER_REPORT.md / tasks/25
+corrected accordingly.
+
+Remaining: **E-3** (subscribe-before-replay — needs server-side buffering
+design), **E-6** (real Codex adapter), **A-1..A-3** (need a real `claude`).

@@ -1,5 +1,18 @@
 # Post-review closure and release-readiness handoff
 
+> **⚠️ CORRECTION (2026-07-19) — Android evidence was vacuous through `25bfc6d`.**
+> An unanchored `.gitignore` rule `car` matched the `car` component of the
+> Kotlin package `io/codeallremote/car/…` and excluded ALL 43 Android source
+> and test files from the repo. Every Android CI run through `25bfc6d`
+> therefore compiled a Kotlin-source-less app and ran `connectedDebugAndroidTest`
+> with ZERO tests — the "instrumented emulator green / 29 JVM tests / 6 methods"
+> evidence recorded below was NOT actually produced. Fixed in `309aff3` (ignore
+> anchored to `/car`; full source committed). The first GENUINE Android run is
+> 29679771553 on `309aff3`: gate compiled the real Kotlin, JVM unit tests ran,
+> lint/APK passed, and the emulator log shows "Starting 6 tests … Finished 6
+> tests … BUILD SUCCESSFUL". Treat every `25bfc6d`/`8538bce` emulator claim
+> below as superseded by `309aff3`.
+
 ## Purpose
 
 The implementation agent has completed the requested code-review fixes. This
