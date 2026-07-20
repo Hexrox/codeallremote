@@ -133,4 +133,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    // MockWebServer drives ViewModel instrumented tests against a local stub
+    // (same artifact already used by JVM unit tests); no live server needed.
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
