@@ -137,9 +137,7 @@ jobs:
             # internal files dir. Best-effort; never masks the gate result.
             adb install -r -t app/build/outputs/apk/debug/app-debug.apk || true
             adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || true
-            adb shell am instrument -w \
-              -e class io.codeallremote.car.android.ScreenshotTest \
-              io.codeallremote.car.android.test/androidx.test.runner.AndroidJUnitRunner || true
+            adb shell am instrument -w -e class io.codeallremote.car.android.ScreenshotTest io.codeallremote.car.android.test/androidx.test.runner.AndroidJUnitRunner || true
             adb exec-out run-as io.codeallremote.car.android cat files/home.png > home.png || true
             if [ "$TEST_FAILED" = "1" ]; then exit 1; fi
 
