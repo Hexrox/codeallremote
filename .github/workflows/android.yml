@@ -127,7 +127,22 @@ jobs:
           arch: x86_64
           target: google_apis
           working-directory: android
-          script: ./gradlew connectedDebugAndroidTest --no-daemon
+          script: |
+            ./gradlew connectedDebugAndroidTest --no-daemon || TEST_FAILED=1
+            # ScreenshotTest renders the real Home screen to the app's internal
+            # files dir; pull it (run-as works for the debuggable build) so it can
+            # be published as an artifact. Best-effort; never masks the test result.
+            adb exec-out run-as io.codeallremote.car.android cat files/home.png > home.png || true
+            if [ "$TEST_FAILED" = "1" ]; then exit 1; fi
+
+      - name: Upload Home screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-home-screenshot
+          path: android/home.png
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload test reports on failure
         if: failure()
