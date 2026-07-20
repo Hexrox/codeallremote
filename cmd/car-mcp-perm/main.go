@@ -2,26 +2,43 @@
 // (ADR-010). Claude is launched with --permission-prompt-tool
 // mcp__car__approve --mcp-config <cfg> where the config runs this binary.
 //
-// This is the Increment-1 skeleton: it is fail-closed (denies every tool use)
-// until Increment 2 wires the decision to the running CAR server's
-// ApprovalBridge over a local socket so a real phone approval drives it.
+// It is a thin, fail-closed transport: each permission request is forwarded
+// over a per-run unix socket to the CAR adapter (--socket), which turns it into
+// a real ApprovalBridge request and returns the phone's decision. With no
+// --socket (or any transport error) it denies fail-closed.
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
+	"time"
 
 	"github.com/code-all-remote/car/internal/mcpperm"
 )
 
 func main() {
-	deny := func(toolName string, input json.RawMessage, toolUseID string) mcpperm.Decision {
-		return mcpperm.Decision{
-			Allow:   false,
-			Message: "CAR: approvals not yet wired to the operator device (ADR-010 increment 2); denying fail-closed",
+	socket := flag.String("socket", "", "unix socket the CAR adapter listens on for permission decisions")
+	session := flag.String("session", "", "CAR session id this run belongs to")
+	timeout := flag.Duration("timeout", 5*time.Minute, "max time to wait for an approval decision")
+	flag.Parse()
+
+	decide := func(toolName string, input json.RawMessage, toolUseID string) mcpperm.Decision {
+		if *socket == "" {
+			return mcpperm.Decision{
+				Allow:   false,
+				Message: "CAR: no approval socket configured; denying fail-closed",
+			}
 		}
+		return mcpperm.DecideOverSocket(*socket, mcpperm.PermissionRequest{
+			Session:   *session,
+			ToolName:  toolName,
+			ToolUseID: toolUseID,
+			Input:     input,
+		}, *timeout)
 	}
-	srv := mcpperm.NewServer("car", "approve", deny)
+
+	srv := mcpperm.NewServer("car", "approve", decide)
 	_ = srv.Serve(context.Background(), os.Stdin, os.Stdout)
 }
