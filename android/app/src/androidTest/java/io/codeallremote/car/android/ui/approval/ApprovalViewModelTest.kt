@@ -56,9 +56,12 @@ class ApprovalViewModelTest {
                 """{"id":"ap1","session_id":"s1","state":"pending","category":"file_write","expires_at":"2026-07-20T00:00:00Z"}"""
             )
         )
+        // Build the repo off the main thread: MockWebServer.url() does a reverse
+        // DNS lookup (getCanonicalHostName), which StrictMode forbids on main.
+        val repo = newRepo()
         lateinit var vm: ApprovalViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            vm = ApprovalViewModel("ap1", newRepo())
+            vm = ApprovalViewModel("ap1", repo)
         }
         waitUntil { !vm.loading.value && vm.approval.value != null }
         assertEquals("pending", vm.approval.value?.state)
@@ -77,9 +80,12 @@ class ApprovalViewModelTest {
                 """{"id":"ap1","session_id":"s1","state":"approved","category":"file_write","expires_at":"2026-07-20T00:00:00Z"}"""
             )
         )
+        // Build the repo off the main thread: MockWebServer.url() does a reverse
+        // DNS lookup (getCanonicalHostName), which StrictMode forbids on main.
+        val repo = newRepo()
         lateinit var vm: ApprovalViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            vm = ApprovalViewModel("ap1", newRepo())
+            vm = ApprovalViewModel("ap1", repo)
         }
         waitUntil { !vm.loading.value && vm.approval.value != null }
         InstrumentationRegistry.getInstrumentation().runOnMainSync { vm.decide("approve") }
