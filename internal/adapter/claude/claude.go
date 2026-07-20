@@ -13,6 +13,7 @@ package claude
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/code-all-remote/car/internal/adapter"
 	"github.com/code-all-remote/car/internal/domain"
+	"github.com/code-all-remote/car/internal/mcpperm"
 	"github.com/code-all-remote/car/internal/wrapper"
 )
 
@@ -37,6 +39,11 @@ type ClaudeAdapter struct {
 	mu       sync.Mutex
 	runs     map[string]*claudeRun
 	execPath string
+
+	// mcpPermPath is the path to the car-mcp-perm binary. When set, the adapter
+	// runs a per-run MCP permission server so real claude tool-permissions become
+	// ApprovalBridge requests (ADR-010). Empty disables that wiring.
+	mcpPermPath string
 
 	// degraded is set when parsing confidence dropped; features that cannot be
 	// safely normalized are disabled until the run ends.
@@ -54,6 +61,15 @@ type claudeRun struct {
 	// with --input-format stream-json), so stdin prompts must be wrapped as
 	// stream-json user messages. The sh test rig leaves this false (raw text).
 	streamJSONInput bool
+
+	// MCP permission server state (ADR-010). permSrv serves the per-run unix
+	// socket; parked maps a claude tool_use_id to the channel a blocked
+	// handlePermission is waiting on, resolved by DecideApproval.
+	permSrv    *mcpperm.SocketServer
+	permCancel context.CancelFunc
+	permTmpDir string
+	parkMu     sync.Mutex
+	parked     map[string]chan mcpperm.Decision
 }
 
 // New creates a Claude Code adapter. execPath is the `claude` executable path;
@@ -116,6 +132,17 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 	// sh/echo are not corrupted).
 	args := buildArgs(execPath, input)
 
+	// Real-approvals wiring (ADR-010): stand up the per-run MCP permission
+	// server (if configured) BEFORE claude starts, and add its flags. The run ID
+	// is deterministic ("run-"+session.ID), matching the handle built below.
+	runID := "run-" + session.ID
+	permArgs, permCancel, permSrv, permTmpDir, permErr := a.setupPermissionServer(runID, session.ID)
+	if permErr != nil {
+		a.logger.Warn("claude: permission server setup failed; continuing without approvals", "error", permErr.Error())
+	} else {
+		args = append(args, permArgs...)
+	}
+
 	// Environment: base env + non-secret env + secrets (kept out of logs).
 	env := buildEnv(input)
 
@@ -127,11 +154,20 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 		Env:     env,
 	})
 	if err != nil {
+		if permCancel != nil {
+			permCancel()
+		}
+		if permSrv != nil {
+			_ = permSrv.Close()
+		}
+		if permTmpDir != "" {
+			_ = os.RemoveAll(permTmpDir)
+		}
 		return nil, fmt.Errorf("starting claude: %w", err)
 	}
 
 	handle := &adapter.RunHandle{
-		ID:        "run-" + session.ID,
+		ID:        runID,
 		SessionID: session.ID,
 		StartedAt: time.Now(),
 	}
@@ -146,6 +182,9 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 		done:            make(chan struct{}),
 		startedAt:       handle.StartedAt,
 		streamJSONInput: strings.Contains(filepath.Base(execPath), "claude"),
+		permSrv:         permSrv,
+		permCancel:      permCancel,
+		permTmpDir:      permTmpDir,
 	}
 
 	a.mu.Lock()
@@ -182,6 +221,7 @@ func (a *ClaudeAdapter) Start(ctx context.Context, session *domain.Session, inpu
 // On process exit it emits a completion (or error) signal and closes the channel.
 func (a *ClaudeAdapter) pump(ctx context.Context, run *claudeRun) {
 	defer close(run.signals)
+	defer a.cleanupPermission(run) // tear down the MCP permission server + fail-close parked requests
 	defer func() {
 		a.mu.Lock()
 		delete(a.runs, run.handle.ID)
@@ -415,11 +455,174 @@ func (a *ClaudeAdapter) DecideApproval(ctx context.Context, run *adapter.RunHand
 	if r == nil {
 		return adapter.Accepted{Accepted: false, Message: "run not found"}
 	}
+	// Real claude path (ADR-010): resolve the parked MCP permission request.
+	if a.resolveParked(r, approvalID, mcpperm.Decision{Allow: approved, Message: reason}) {
+		return adapter.Accepted{Accepted: true}
+	}
+	// Fallback for the sh test rig (no permission server): the legacy stdin path.
 	payload := approvalDecisionLine(approved, reason)
 	if _, err := r.proc.WriteInput(payload); err != nil {
 		return adapter.Accepted{Accepted: false, Message: "failed to write decision to stdin: " + err.Error()}
 	}
 	return adapter.Accepted{Accepted: true}
+}
+
+// SetMCPPermPath sets the path to the car-mcp-perm binary. Empty disables the
+// MCP permission wiring (DecideApproval then falls back to the stdin path).
+func (a *ClaudeAdapter) SetMCPPermPath(p string) {
+	a.mu.Lock()
+	a.mcpPermPath = p
+	a.mu.Unlock()
+}
+
+// setupPermissionServer creates (when mcpPermPath is set) a per-run unix-socket
+// MCP permission server and the --mcp-config file, returning the extra claude
+// args and the server/lifecycle handles. When disabled it returns zero values
+// and no error.
+func (a *ClaudeAdapter) setupPermissionServer(runID, sessionID string) (extraArgs []string, cancel context.CancelFunc, srv *mcpperm.SocketServer, tmpDir string, err error) {
+	a.mu.Lock()
+	mcpPermPath := a.mcpPermPath
+	a.mu.Unlock()
+
+	if mcpPermPath == "" {
+		return nil, nil, nil, "", nil
+	}
+
+	tmpDir, err = os.MkdirTemp("", "car-perm-")
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+
+	socketPath := filepath.Join(tmpDir, "perm.sock")
+	cfgPath := filepath.Join(tmpDir, "mcp.json")
+
+	cfg := map[string]any{
+		"mcpServers": map[string]any{
+			"car": map[string]any{
+				"command": mcpPermPath,
+				"args":    []string{"--socket", socketPath, "--session", sessionID},
+			},
+		},
+	}
+	cfgBytes, err := json.Marshal(cfg)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return nil, nil, nil, "", err
+	}
+	if err := os.WriteFile(cfgPath, cfgBytes, 0o644); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return nil, nil, nil, "", err
+	}
+
+	srv, err = mcpperm.NewSocketServer(socketPath, func(req mcpperm.PermissionRequest) mcpperm.Decision {
+		return a.handlePermission(runID, req)
+	})
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return nil, nil, nil, "", err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = srv.Serve(ctx) }()
+
+	// --permission-mode default routes unmatched tool uses to the permission
+	// tool (without it the default mode auto-approves and the tool is never
+	// consulted); --strict-mcp-config uses only our config, ignoring any project
+	// .mcp.json. Verified against claude 2.1.214.
+	extraArgs = []string{
+		"--permission-mode", "default",
+		"--strict-mcp-config",
+		"--permission-prompt-tool", "mcp__car__approve",
+		"--mcp-config", cfgPath,
+	}
+	return extraArgs, cancel, srv, tmpDir, nil
+}
+
+// handlePermission turns one claude tool-permission request into a
+// SignalApprovalRequest and blocks until DecideApproval resolves it, the run
+// ends, or it times out (fail-closed on the last two).
+func (a *ClaudeAdapter) handlePermission(runID string, req mcpperm.PermissionRequest) mcpperm.Decision {
+	r := a.runFor(runID)
+	if r == nil {
+		return mcpperm.Decision{Allow: false, Message: "CAR: run not found (fail-closed)"}
+	}
+
+	ch := make(chan mcpperm.Decision, 1)
+	r.parkMu.Lock()
+	if r.parked == nil {
+		r.parked = make(map[string]chan mcpperm.Decision)
+	}
+	r.parked[req.ToolUseID] = ch
+	r.parkMu.Unlock()
+
+	defer func() {
+		r.parkMu.Lock()
+		delete(r.parked, req.ToolUseID)
+		r.parkMu.Unlock()
+	}()
+
+	a.send(r, adapter.AdapterSignal{
+		Type:      adapter.SignalApprovalRequest,
+		SessionID: req.Session,
+		Timestamp: time.Now(),
+		Payload: mustMarshal(adapter.ApprovalRequestPayload{
+			ApprovalID:           req.ToolUseID,
+			Category:             "tool_use",
+			ActionKind:           req.ToolName,
+			HumanReadableContext: string(req.Input),
+			StructuredPayload:    map[string]any{"tool_name": req.ToolName},
+			ExpiresIn:            5 * time.Minute,
+		}),
+	})
+
+	select {
+	case d := <-ch:
+		return d
+	case <-r.done:
+		return mcpperm.Decision{Allow: false, Message: "CAR: run ended (fail-closed)"}
+	case <-time.After(5 * time.Minute):
+		return mcpperm.Decision{Allow: false, Message: "CAR: approval timed out (fail-closed)"}
+	}
+}
+
+// resolveParked delivers a decision to a blocked handlePermission. Returns false
+// if no request is parked under toolUseID (e.g. the sh rig has no server).
+func (a *ClaudeAdapter) resolveParked(r *claudeRun, toolUseID string, d mcpperm.Decision) bool {
+	r.parkMu.Lock()
+	defer r.parkMu.Unlock()
+	ch, ok := r.parked[toolUseID]
+	if !ok {
+		return false
+	}
+	select {
+	case ch <- d:
+	default:
+	}
+	delete(r.parked, toolUseID)
+	return true
+}
+
+// cleanupPermission tears down the per-run permission server and fails closed
+// any still-parked requests. Safe when no server was started.
+func (a *ClaudeAdapter) cleanupPermission(r *claudeRun) {
+	if r.permCancel != nil {
+		r.permCancel()
+	}
+	if r.permSrv != nil {
+		_ = r.permSrv.Close()
+	}
+	r.parkMu.Lock()
+	for _, ch := range r.parked {
+		select {
+		case ch <- mcpperm.Decision{Allow: false, Message: "CAR: run ended (fail-closed)"}:
+		default:
+		}
+	}
+	r.parked = nil
+	r.parkMu.Unlock()
+	if r.permTmpDir != "" {
+		_ = os.RemoveAll(r.permTmpDir)
+	}
 }
 
 // approvalDecisionLine builds the stdin JSON line for a Claude Code approval
