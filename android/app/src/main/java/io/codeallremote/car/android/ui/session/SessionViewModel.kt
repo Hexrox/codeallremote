@@ -36,6 +36,15 @@ class SessionViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    // Declared BEFORE init: the collectors launched in init run synchronously
+    // under Dispatchers.Main.immediate when the VM is constructed on the main
+    // thread (production composition and instrumented tests), so projection
+    // must already be initialized or they NPE on first emission.
+    private val projection = MutableStateFlow(
+        SessionUiState(sessionId = sessionId, connection = ConnectionState.Disconnected)
+    )
+    val state: StateFlow<SessionUiState> = projection.asStateFlow()
+
     init {
         // Re-derive state from the repository projection.
         viewModelScope.launch {
@@ -68,11 +77,6 @@ class SessionViewModel(
         }
         load()
     }
-
-    private val projection = MutableStateFlow(
-        SessionUiState(sessionId = sessionId, connection = ConnectionState.Disconnected)
-    )
-    val state: StateFlow<SessionUiState> = projection.asStateFlow()
 
     fun load() {
         viewModelScope.launch {
