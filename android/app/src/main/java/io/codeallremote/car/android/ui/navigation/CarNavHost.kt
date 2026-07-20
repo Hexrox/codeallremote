@@ -1,6 +1,7 @@
 package io.codeallremote.car.android.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -100,14 +101,34 @@ fun CarNavHost(homeState: HomeUiState) {
             )
         }
         composable("pair") {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val vm = androidx.lifecycle.viewmodel.compose.viewModel<io.codeallremote.car.android.ui.pairing.PairingViewModel>(
+                factory = androidx.lifecycle.viewmodel.viewModelFactory {
+                    androidx.lifecycle.viewmodel.initializer {
+                        io.codeallremote.car.android.ui.pairing.PairingViewModel(
+                            accounts = io.codeallremote.car.android.store.ServerAccountStore(context.applicationContext),
+                            tokens = io.codeallremote.car.android.store.SecureTokenStore(context.applicationContext),
+                            deviceKey = io.codeallremote.car.android.store.DeviceKeyStore(),
+                            restFactory = { url ->
+                                io.codeallremote.car.android.net.CarRestClient(
+                                    io.codeallremote.car.android.data.CarClient.defaultHttpClient(), url, { null },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+            val ui = vm.uiState.collectAsState()
+            val url = vm.baseUrl.collectAsState()
+            val name = vm.deviceName.collectAsState()
             PairingScreen(
-                state = io.codeallremote.car.android.ui.pairing.PairingUiState(),
-                serverBaseUrl = "https://",
-                deviceName = "Android",
-                onBaseUrlChange = {},
-                onDeviceNameChange = {},
-                onRequestChallenge = {},
-                onConfirmPair = {},
+                state = ui.value,
+                serverBaseUrl = url.value,
+                deviceName = name.value,
+                onBaseUrlChange = vm::onBaseUrlChange,
+                onDeviceNameChange = vm::onDeviceNameChange,
+                onRequestChallenge = vm::requestChallenge,
+                onConfirmPair = vm::confirmPair,
                 onBack = { nav.popBackStack() },
             )
         }
