@@ -3,7 +3,6 @@ package io.codeallremote.car.android.notifications
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -22,7 +21,6 @@ class CarConnectionService : Service() {
         const val EXTRA_SERVER_ID = "server_id"
         private const val CHANNEL_ID = "car_connection"
         private const val NOTIFICATION_ID = 1001
-        var clientProvider: ((Context, String) -> CarClient?)? = null
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -77,7 +75,9 @@ class CarConnectionService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        val c = clientProvider?.invoke(this, serverId) ?: run {
+        val bound = io.codeallremote.car.android.data.ActiveServer.bind(applicationContext)
+        val c = io.codeallremote.car.android.data.ActiveServer.client()
+        if (!bound || c == null) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -94,13 +94,14 @@ class CarConnectionService : Service() {
             }
         }
 
-        c.ws.start()
+        // ActiveServer.bind() already started the shared WS; do NOT start another.
 
         return START_STICKY
     }
 
     override fun onDestroy() {
-        client?.ws?.stop()
+        // The shared WebSocket is owned by ActiveServer and used by foreground
+        // screens; do not stop it here. Only cancel this service's scope.
         scope.cancel()
         super.onDestroy()
     }

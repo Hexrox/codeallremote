@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import io.codeallremote.car.android.data.ActiveServer
 import io.codeallremote.car.android.data.CarClient
 import io.codeallremote.car.android.data.CarRepository
 import io.codeallremote.car.android.notifications.CarConnectionService
@@ -29,12 +30,11 @@ import io.codeallremote.car.android.ui.navigation.CarNavHost
 import io.codeallremote.car.android.ui.theme.CarTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * Single-activity host. Deep links are validated by the navigation graph
  * before private content is rendered (docs/18 §Navigation model). On launch it
- * also wires the background connection service (foreground WS + notifications).
+ * also starts the background connection service (foreground WS + notifications).
  */
 class MainActivity : ComponentActivity() {
 
@@ -52,15 +52,9 @@ class MainActivity : ComponentActivity() {
         // authorization in addition to this gate.
         DeepLinkGuard.validate(intent)
 
-        // Wire the background connection service: supply it a client factory and
-        // start it only for a really-paired account, so events and approvals
-        // arrive while the app is backgrounded. If no server is paired, the
-        // service is not started — that avoids a doomed reconnect loop against
-        // a placeholder host before pairing exists.
-        CarConnectionService.clientProvider = { ctx, serverId -> buildCarClientFor(ctx, serverId) }
-
         // Resolve the active paired server asynchronously; start the foreground
-        // service only if one exists.
+        // service only if one exists. Both the service and Home share the single
+        // CarClient/WebSocket owned by ActiveServer.
         lifecycleScope.launch {
             val account = ServerAccountStore(applicationContext).accounts.first().firstOrNull()
             if (account != null && account.pairedAt.isNotEmpty()) {
@@ -86,29 +80,26 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Builds a HomeViewModel bound to a CarClient for the active paired server.
+ * Builds a HomeViewModel bound to the shared CarRepository from ActiveServer.
  *
- * The active account is the first account in ServerAccountStore (all persisted
- * accounts are paired). Tokens are read from SecureTokenStore so they never sit
- * in plain fields. When no server is paired, a throwaway repo is used and the
- * empty (no-server) state is rendered via [HomeViewModel.showNoServer].
+ * ActiveServer.bind() starts the shared WebSocket once and returns the shared
+ * CarClient/CarRepository. When no server is paired, a throwaway repo is used
+ * and the empty (no-server) state is rendered via [HomeViewModel.showNoServer].
  */
 fun homeViewModelFactory(context: android.content.Context): ViewModelProvider.Factory = viewModelFactory {
     initializer<HomeViewModel> {
-        val account = runBlocking { ServerAccountStore(context).accounts.first().firstOrNull() }
-        val persisted = PersistedCursorStore(context)
-        val cursors = HybridCursorStore(PersistedCursorPersistence(persisted))
-        if (account == null) {
+        val bound = ActiveServer.bind(context)
+        val repo = ActiveServer.repo()
+        if (!bound || repo == null) {
             // No paired server: build a throwaway repo and render the empty state.
             // refresh() is never called, so the dummy base URL is never used.
             val dummy = ServerAccount(id = "none", displayName = "none", baseUrl = "https://none.invalid", deviceId = "none", pairedAt = "")
             val tokens = SecureTokenStore(context)
+            val cursors = HybridCursorStore(PersistedCursorPersistence(PersistedCursorStore(context)))
             val client = CarClient(dummy, { tokens.getToken(dummy.id) }, { dummy.deviceId }, cursors)
             HomeViewModel(CarRepository(client.rest, PersistedCursorStore(context))).also { it.showNoServer() }
         } else {
-            val tokens = SecureTokenStore(context)
-            val client = CarClient(account, { tokens.getToken(account.id) }, { account.deviceId }, cursors)
-            HomeViewModel(CarRepository(client.rest, PersistedCursorStore(context))).also { it.refresh() }
+            HomeViewModel(repo).also { it.refresh() }
         }
     }
 }
