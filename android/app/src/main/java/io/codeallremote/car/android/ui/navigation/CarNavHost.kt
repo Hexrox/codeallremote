@@ -2,7 +2,11 @@ package io.codeallremote.car.android.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -46,12 +50,33 @@ fun CarNavHost(homeState: HomeUiState) {
             deepLinks = listOf(navDeepLink { uriPattern = "${Routes.DEEP_LINK_SCHEME}://${Routes.DEEP_LINK_HOST_SESSION}/{serverId}/{sessionId}" }),
         ) { entry ->
             val sessionId = entry.arguments?.getString("sessionId").orEmpty()
-            SessionDetailScreen(
-                state = SessionUiState(sessionId = sessionId),
-                onSend = {},
-                onInterrupt = {},
-                onBack = { nav.popBackStack() },
-            )
+            val context = LocalContext.current
+            val bound = remember(sessionId) { io.codeallremote.car.android.data.ActiveServer.bind(context) }
+            val repo = io.codeallremote.car.android.data.ActiveServer.repo()
+            val client = io.codeallremote.car.android.data.ActiveServer.client()
+            if (bound && repo != null && client != null) {
+                val vm = viewModel<io.codeallremote.car.android.ui.session.SessionViewModel>(
+                    key = "session_$sessionId",
+                    factory = viewModelFactory {
+                        initializer {
+                            io.codeallremote.car.android.ui.session.SessionViewModel(sessionId, repo, client.ws.state, client.ws.events)
+                        }
+                    },
+                )
+                SessionDetailScreen(
+                    state = vm.state.collectAsState().value,
+                    onSend = { text -> vm.updateDraft(text); vm.sendPrompt() },
+                    onInterrupt = vm::interrupt,
+                    onBack = { nav.popBackStack() },
+                )
+            } else {
+                SessionDetailScreen(
+                    state = SessionUiState(sessionId = sessionId),
+                    onSend = {},
+                    onInterrupt = {},
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
         composable(Routes.APPROVAL,
             arguments = listOf(
@@ -59,15 +84,36 @@ fun CarNavHost(homeState: HomeUiState) {
                 navArgument("approvalId") { type = NavType.StringType },
             ),
             deepLinks = listOf(navDeepLink { uriPattern = "${Routes.DEEP_LINK_SCHEME}://${Routes.DEEP_LINK_HOST_APPROVAL}/{serverId}/{approvalId}" }),
-        ) {
-            ApprovalDetailScreen(
-                approval = null,
-                loading = true,
-                submitting = false,
-                onApprove = {},
-                onDeny = {},
-                onBack = { nav.popBackStack() },
-            )
+        ) { entry ->
+            val approvalId = entry.arguments?.getString("approvalId").orEmpty()
+            val context = LocalContext.current
+            val bound = remember(approvalId) { io.codeallremote.car.android.data.ActiveServer.bind(context) }
+            val repo = io.codeallremote.car.android.data.ActiveServer.repo()
+            if (bound && repo != null) {
+                val vm = viewModel<io.codeallremote.car.android.ui.approval.ApprovalViewModel>(
+                    key = "approval_$approvalId",
+                    factory = viewModelFactory {
+                        initializer { io.codeallremote.car.android.ui.approval.ApprovalViewModel(approvalId, repo) }
+                    },
+                )
+                ApprovalDetailScreen(
+                    approval = vm.approval.collectAsState().value,
+                    loading = vm.loading.collectAsState().value,
+                    submitting = vm.submitting.collectAsState().value,
+                    onApprove = { vm.decide("approve") },
+                    onDeny = { vm.decide("deny") },
+                    onBack = { nav.popBackStack() },
+                )
+            } else {
+                ApprovalDetailScreen(
+                    approval = null,
+                    loading = false,
+                    submitting = false,
+                    onApprove = {},
+                    onDeny = {},
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
         composable("workspace/{workspaceId}") { entry ->
             val wid = entry.arguments?.getString("workspaceId").orEmpty()
