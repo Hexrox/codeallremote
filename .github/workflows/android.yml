@@ -128,7 +128,12 @@ jobs:
           target: google_apis
           working-directory: android
           script: |
-            ./gradlew connectedDebugAndroidTest --no-daemon || TEST_FAILED=1
+            rm -f "$HOME/car_test_failed"
+            # IMPORTANT: android-emulator-runner executes EACH line of this
+            # script in a SEPARATE `sh -c`, so shell variables do NOT persist
+            # between lines. We record a gate failure as a file on disk (which
+            # does persist) and re-check it on the last line, instead of a var.
+            ./gradlew connectedDebugAndroidTest --no-daemon || touch "$HOME/car_test_failed"
             # Screenshot capture. Gradle uninstalls both APKs after
             # connectedDebugAndroidTest, so `run-as` right after fails with
             # "unknown package". Reinstall the (already-built) app + test APKs
@@ -139,7 +144,7 @@ jobs:
             adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || true
             adb shell am instrument -w -e class io.codeallremote.car.android.ScreenshotTest io.codeallremote.car.android.test/androidx.test.runner.AndroidJUnitRunner || true
             adb exec-out run-as io.codeallremote.car.android cat files/home.png > home.png || true
-            if [ "$TEST_FAILED" = "1" ]; then exit 1; fi
+            [ -f "$HOME/car_test_failed" ] && exit 1 || true
 
       - name: Upload Home screenshot
         if: always()
@@ -150,12 +155,21 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Upload test reports on failure
-        if: failure()
+      - name: Print instrumented test results
+        if: always()
+        working-directory: android
+        run: |
+          echo "=== androidTest result XMLs (failures include stack traces) ==="
+          find app/build/outputs/androidTest-results -name '*.xml' 2>/dev/null \
+            -exec sh -c 'echo "--- $1 ---"; cat "$1"' _ {} \; || true
+
+      - name: Upload test reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-instrumented-reports
           path: |
-            android/app/build/reports/androidTest/
+            android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
           retention-days: 14
