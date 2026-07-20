@@ -53,4 +53,13 @@ class HomeViewModel(private val repo: CarRepository) : ViewModel() {
     fun onLiveEvent(ev: LiveEvent) {
         viewModelScope.launch { repo.applyLiveEvent(ev) }
     }
+
+    /**
+     * Render the empty (no paired server) state instead of a loading skeleton.
+     * Used at startup when no server account exists yet, so Home shows the
+     * "pair a server" call to action rather than a doomed request.
+     */
+    fun showNoServer() {
+        _state.value = HomeUiState(loading = false, sessions = emptyList())
+    }
 }
