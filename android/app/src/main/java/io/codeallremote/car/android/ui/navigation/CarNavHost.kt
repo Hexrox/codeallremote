@@ -2,6 +2,7 @@ package io.codeallremote.car.android.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.initializer
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -104,7 +105,7 @@ fun CarNavHost(homeState: HomeUiState) {
             val context = androidx.compose.ui.platform.LocalContext.current
             val vm = androidx.lifecycle.viewmodel.compose.viewModel<io.codeallremote.car.android.ui.pairing.PairingViewModel>(
                 factory = androidx.lifecycle.viewmodel.viewModelFactory {
-                    androidx.lifecycle.viewmodel.initializer {
+                    initializer {
                         io.codeallremote.car.android.ui.pairing.PairingViewModel(
                             accounts = io.codeallremote.car.android.store.ServerAccountStore(context.applicationContext),
                             tokens = io.codeallremote.car.android.store.SecureTokenStore(context.applicationContext),
