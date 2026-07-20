@@ -1,6 +1,6 @@
 # ADR-010: Real Claude Code approvals via an MCP permission-prompt server
 
-**Status:** accepted (protocol verified; implementation incremental)
+**Status:** DONE — all three increments implemented and verified end-to-end vs claude 2.1.214 (2026-07-20)
 **Date:** 2026-07-19
 **Depends on:** ADR-009 (A-2). Changes the **approval trust boundary**, so this
 is its own reviewed increment per `CLAUDE.md`.
@@ -113,3 +113,25 @@ a real authenticated `claude` once wired.
 Increment status: **1 done + verified** (mcpperm library, car-mcp-perm skeleton).
 **2** = socket request/response transport (reusable, unit-testable). **3** =
 adapter socket owner + mcp-config generation + DecideApproval rewrite.
+
+## Completion (2026-07-20) — A-2 done, verified end-to-end
+
+All three increments landed and were verified against a real, authenticated
+claude 2.1.214 (clean env):
+- **1** `internal/mcpperm` server + `cmd/car-mcp-perm` — claude calls the tool
+  and honors allow/deny.
+- **2** `internal/mcpperm` unix-socket transport (`DecideOverSocket` /
+  `SocketServer`) — full claude → car-mcp-perm → socket → decision → claude path.
+- **3** adapter wiring — a Bash `rm` task drove claude → car-mcp-perm → socket →
+  adapter, which emitted a `SignalApprovalRequest` (action_kind "Bash", the
+  command as context); approving via `DecideApproval` unblocked the parked
+  request and claude ran the tool.
+
+Additional verified requirement: the adapter must launch claude with
+`--permission-mode default` (without it the default mode auto-approves and the
+permission tool is never consulted) and `--strict-mcp-config`. These are added
+by `setupPermissionServer`.
+
+Remaining is operational, not code: the operator points `SetMCPPermPath` at the
+built `car-mcp-perm` binary (config), and provides provider auth. The Claude
+adapter's approvals are now functional against a real `claude`.
