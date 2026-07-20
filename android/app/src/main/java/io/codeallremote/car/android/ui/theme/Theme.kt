@@ -2,9 +2,9 @@ package io.codeallremote.car.android.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayArrow
@@ -121,7 +121,7 @@ fun sessionVisual(state: String): SessionVisual {
         else -> SessionVisual(
             container = MaterialTheme.colorScheme.surfaceVariant,
             content = MaterialTheme.colorScheme.onSurfaceVariant,
-            icon = Icons.Filled.HelpOutline,
+            icon = Icons.AutoMirrored.Filled.HelpOutline,
             label = state,
         )
     }
