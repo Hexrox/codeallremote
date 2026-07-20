@@ -1,23 +1,51 @@
 package io.codeallremote.car.android.ui.home
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.codeallremote.car.android.R
 import io.codeallremote.car.android.net.dto.SessionSnapshot
+import io.codeallremote.car.android.ui.theme.sessionVisual
 import java.text.DateFormat
 import java.util.Date
 
@@ -67,8 +95,8 @@ private fun SessionList(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("session_list"),
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (lastUpdated != null) {
             item {
@@ -89,36 +117,77 @@ private fun SessionList(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SessionCard(s: SessionSnapshot, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                s.title ?: s.id,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+    val visual = sessionVisual(s.state)
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(visual.container),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    visual.icon,
+                    contentDescription = null,
+                    tint = visual.content,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    s.title ?: s.id,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        visual.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.semantics { contentDescription = "State: ${visual.label}" },
+                    )
+                    Text("·", color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        s.adapterId,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Text(
+                    s.id,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
             )
-            Text(s.adapterId, style = MaterialTheme.typography.bodySmall)
-            StateBadge(s.state)
         }
     }
-}
-
-@Composable
-private fun StateBadge(state: String) {
-    val (label, container) = when (state) {
-        "active" -> stringResource(R.string.session_state_active) to MaterialTheme.colorScheme.primaryContainer
-        "waiting_approval" -> stringResource(R.string.session_state_waiting_approval) to MaterialTheme.colorScheme.tertiaryContainer
-        "completed" -> stringResource(R.string.session_state_completed) to MaterialTheme.colorScheme.surfaceVariant
-        "failed" -> stringResource(R.string.session_state_failed) to MaterialTheme.colorScheme.errorContainer
-        "interrupted" -> stringResource(R.string.session_state_interrupted) to MaterialTheme.colorScheme.surfaceVariant
-        else -> state to MaterialTheme.colorScheme.surfaceVariant
-    }
-    // The badge always has a text label; color is secondary (a11y).
-    AssistChip(
-        onClick = {},
-        label = { Text(label, modifier = Modifier.semantics { contentDescription = "State: $label" }) },
-        colors = AssistChipDefaults.assistChipColors(containerColor = container),
-    )
 }
 
 @Composable
@@ -141,11 +210,22 @@ private fun SkeletonCard() {
 @Composable
 private fun EmptyState() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            stringResource(R.string.home_no_sessions),
-            style = MaterialTheme.typography.bodyMedium,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(24.dp),
-        )
+        ) {
+            Icon(
+                Icons.Filled.Inbox,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(48.dp),
+            )
+            Text(
+                stringResource(R.string.home_no_sessions),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 

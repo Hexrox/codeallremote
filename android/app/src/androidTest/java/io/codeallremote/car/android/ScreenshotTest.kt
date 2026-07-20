@@ -27,10 +27,31 @@ class ScreenshotTest {
         val state = HomeUiState(
             loading = false,
             sessions = listOf(
-                SessionSnapshot("ses_1", "main", "claude-code", "active", 12, "Fix auth bug"),
-                SessionSnapshot("ses_2", "main", "claude-code", "completed", 34, "Refactor parser"),
-                SessionSnapshot("ses_3", "web", "claude-code", "waiting_approval", 7, "Update deps")
-            )
+                SessionSnapshot(
+                    id = "ses_1",
+                    workspaceId = "main",
+                    adapterId = "claude-code",
+                    state = "active",
+                    lastSequence = 12,
+                    title = "Fix auth bug",
+                ),
+                SessionSnapshot(
+                    id = "ses_2",
+                    workspaceId = "main",
+                    adapterId = "claude-code",
+                    state = "completed",
+                    lastSequence = 34,
+                    title = "Refactor stream-json parser",
+                ),
+                SessionSnapshot(
+                    id = "ses_3",
+                    workspaceId = "web",
+                    adapterId = "claude-code",
+                    state = "waiting_approval",
+                    lastSequence = 7,
+                    title = "Update dependencies",
+                ),
+            ),
         )
 
         composeRule.setContent {
@@ -39,7 +60,7 @@ class ScreenshotTest {
                     state = state,
                     onOpenSession = {},
                     onPairServer = {},
-                    onRetry = {}
+                    onRetry = {},
                 )
             }
         }
