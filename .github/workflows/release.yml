@@ -1,0 +1,71 @@
+# Builds a minified, signed release APK (R8 + resource shrink → ~small).
+#
+# Signing: an EPHEMERAL keystore is generated per run (the repo is public, so a
+# private key must never be committed or uploaded as an artifact). Consequence:
+# each build is signed with a different key, so upgrading in place is not
+# possible — reinstall (uninstall first) to move between release builds. For a
+# stable upgrade key, store a keystore + passwords as GitHub Actions secrets and
+# switch the "Generate keystore" step to decode them instead.
+name: release-apk
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: signed release apk
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Generate ephemeral signing keystore
+        run: |
+          KS="$RUNNER_TEMP/car-release.jks"
+          PW="$(openssl rand -base64 24)"
+          keytool -genkeypair -v -keystore "$KS" -alias car \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$PW" -keypass "$PW" \
+            -dname "CN=CAR, OU=homelab, O=CAR, C=PL"
+          # build.gradle.kts reads keystore.properties from the Gradle root (android/).
+          cat > "$GITHUB_WORKSPACE/android/keystore.properties" <<EOF
+          storeFile=$KS
+          storePassword=$PW
+          keyAlias=car
+          keyPassword=$PW
+          EOF
+
+      - name: Assemble signed release APK
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: car-android-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
