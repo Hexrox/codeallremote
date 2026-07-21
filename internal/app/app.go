@@ -51,6 +51,15 @@ type App struct {
 	identity      *identity.Service
 	publisher     EventPublisher
 	nextRunID     uint64
+
+	// runCtx is the lifetime context for agent processes and their observer
+	// goroutines. It is deliberately detached from any HTTP request context: a
+	// run must outlive the request that started it (a request-scoped context is
+	// cancelled when the handler returns, which would kill the child process
+	// via exec.CommandContext ~immediately after StartRun). runCancel is called
+	// on Shutdown as a backstop to terminate any still-running processes.
+	runCtx    context.Context
+	runCancel context.CancelFunc
 	// observers tracks in-flight adapter observer goroutines started by
 	// StartRun. Each goroutine calls Done only after its signal loop exits,
 	// i.e. after the run's terminal event has been persisted. Tests use
@@ -93,6 +102,9 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		stateMachine: session.NewStateMachine(),
 		adapters:     make(map[string]adapter.Adapter),
 	}
+
+	// Detached lifetime context for runs (see the runCtx field comment).
+	app.runCtx, app.runCancel = context.WithCancel(context.Background())
 
 	// Memory store for approvals keeps recent approvals in-process; the DB
 	// store provides durability for restart recovery.
@@ -192,6 +204,11 @@ func (a *App) GetEvents(sessionID string, after int64, limit int) (*storage.Curs
 func (a *App) Shutdown(ctx context.Context) error {
 	if err := a.lifecycle.Shutdown(ctx); err != nil {
 		a.logger.Error("lifecycle shutdown error", "error", err)
+	}
+	// Backstop: terminate any agent processes still bound to the run context
+	// after the graceful drain above.
+	if a.runCancel != nil {
+		a.runCancel()
 	}
 	a.idempotent.Close()
 	if err := a.db.Close(); err != nil {

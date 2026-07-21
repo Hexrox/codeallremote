@@ -108,7 +108,11 @@ func (a *App) StartRun(ctx context.Context, actorID, sessionID string) (*domain.
 		return nil, fmt.Errorf("updating state: %w", err)
 	}
 
-	handle, err := ad.Start(ctx, s, adapter.Input{
+	// Start the agent process under the app's run-lifetime context, NOT the
+	// request context: the child must outlive the HTTP request (a request
+	// context is cancelled when the handler returns, which would kill the
+	// process via exec.CommandContext right after StartRun returns 202).
+	handle, err := ad.Start(a.runCtx, s, adapter.Input{
 		WorkspacePath: wsPath(ws),
 		Env:           a.adapterEnv[s.AdapterID],
 	})
@@ -148,7 +152,9 @@ func (a *App) StartRun(ctx context.Context, actorID, sessionID string) (*domain.
 	// deterministically. Add before launch so a subsequent Wait cannot race
 	// ahead of the increment.
 	a.observers.Add(1)
-	go a.observeAdapter(ctx, ad, s, run, handle)
+	// The observer must also run under the detached run context, not the
+	// request context, so it keeps draining signals after the request returns.
+	go a.observeAdapter(a.runCtx, ad, s, run, handle)
 
 	return run, nil
 }
