@@ -13,5 +13,10 @@
 # OkHttp (ships consumer rules; this is defensive).
 -dontwarn okhttp3.internal.platform.**
 
+# Tink (pulled in by androidx.security-crypto / EncryptedSharedPreferences)
+# references Google errorprone annotations that are compile-time only and are
+# not on the runtime/R8 classpath. They are safe to ignore.
+-dontwarn com.google.errorprone.annotations.**
+
 # Keep models used over the WS/REST boundary.
 -keep class io.codeallremote.car.android.net.dto.** { *; }
