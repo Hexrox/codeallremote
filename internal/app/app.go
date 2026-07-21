@@ -113,6 +113,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 
 	// Identity service backs pairing, access tokens and revocation.
 	app.identity = identity.NewService(db)
+	// Honor the configured pairing-token lifetime. NewService defaults to a
+	// 15-minute test-friendly expiry; without this, config token_expiry was
+	// silently ignored and paired devices went stale within minutes.
+	app.identity.SetAccessExpiry(cfg.Security.TokenExpiry.Duration())
 
 	// Register the fake adapter for testing/deterministic runs.
 	fake := adapter.NewFakeAdapter()
