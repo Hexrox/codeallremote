@@ -84,6 +84,13 @@ type AdapterConfig struct {
 	// config is backed up alongside the database; place credentials in the
 	// server's environment (systemd) which the adapter inherits.
 	Env map[string]string `json:"env,omitempty"`
+
+	// MCPPermPath is the absolute path to the car-mcp-perm helper binary. When
+	// set, the claude adapter routes tool-permission prompts through the MCP
+	// permission server (ADR-010) so approvals surface to CAR — and the mobile
+	// app — instead of being auto-handled by the CLI. When empty, the adapter
+	// runs without approval routing (tool prompts are not surfaced).
+	MCPPermPath string `json:"mcp_perm_path,omitempty"`
 }
 
 // ServerConfig holds HTTP server settings.

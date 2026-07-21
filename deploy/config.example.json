@@ -29,7 +29,8 @@
       "supported_versions": "*",
       "env": {
         "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456"
-      }
+      },
+      "mcp_perm_path": "/opt/car/bin/car-mcp-perm"
     }
   ],
   "workspaces": [

@@ -127,7 +127,14 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		}
 		switch ac.ID {
 		case "claude-code":
-			app.RegisterAdapter(claude.New(ac.ExecPath, logger))
+			cad := claude.New(ac.ExecPath, logger)
+			// Route tool-permission prompts through the MCP permission server
+			// (ADR-010) when the helper binary is configured, so approvals reach
+			// CAR and the app instead of being auto-handled by the CLI.
+			if ac.MCPPermPath != "" {
+				cad.SetMCPPermPath(ac.MCPPermPath)
+			}
+			app.RegisterAdapter(cad)
 		default:
 			logger.Warn("unknown adapter id in config; ignored", "id", ac.ID)
 		}
