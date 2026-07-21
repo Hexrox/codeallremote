@@ -1,10 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Transport policy (ADR-011).
+
+  Default: cleartext forbidden everywhere; CAR is TLS-only on any public path.
+
+  Exception: cleartext (http/ws) is permitted ONLY to the explicitly listed
+  homelab/VPN hosts. All traffic to those hosts travels inside a private,
+  already-encrypted overlay (WireGuard via the VPS gateway, or ZeroTier), so
+  plaintext there is not exposed on the wire. See ADR-011 for the rationale and
+  threat model. 127.0.0.1/localhost is listed so instrumented tests can reach a
+  local MockWebServer.
+
+  To point the app at a different homelab host, add its address here.
+-->
 <network-security-config>
-    <!-- Base config: cleartext forbidden everywhere. -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
         </trust-anchors>
     </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Homelab CAR host over WireGuard (LAN address). -->
+        <domain includeSubdomains="false">192.168.2.16</domain>
+        <!-- Same host over ZeroTier. -->
+        <domain includeSubdomains="false">172.22.89.70</domain>
+        <!-- Local MockWebServer for instrumented tests. -->
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
 </network-security-config>

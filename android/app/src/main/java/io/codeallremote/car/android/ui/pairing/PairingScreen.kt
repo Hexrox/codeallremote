@@ -57,7 +57,7 @@ fun PairingScreen(
             OutlinedTextField(
                 value = serverBaseUrl,
                 onValueChange = onBaseUrlChange,
-                label = { Text("Server URL (https://...)") },
+                label = { Text("Server URL (http(s)://...)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("server_url"),
             )
@@ -71,7 +71,7 @@ fun PairingScreen(
 
             Button(
                 onClick = onRequestChallenge,
-                enabled = serverBaseUrl.startsWith("https://"),
+                enabled = serverBaseUrl.startsWith("http://") || serverBaseUrl.startsWith("https://"),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Get pairing challenge") }
 

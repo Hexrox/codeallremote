@@ -24,11 +24,12 @@ class PairingViewModelTest {
     }
 
     @Test
-    fun requestChallenge_nonHttps_setsError() {
+    fun requestChallenge_nonHttpScheme_setsError() {
         val vm = newVm()
-        vm.onBaseUrlChange("http://insecure.example")
+        // http:// and https:// are accepted (ADR-011); any other scheme is rejected.
+        vm.onBaseUrlChange("ftp://nope.example")
         vm.requestChallenge()
-        assertEquals("Server URL must start with https://", vm.uiState.value.error)
+        assertEquals("Server URL must start with http:// or https://", vm.uiState.value.error)
     }
 
     @Test

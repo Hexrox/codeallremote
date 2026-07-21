@@ -39,8 +39,10 @@ class PairingViewModel(
     }
 
     fun requestChallenge() {
-        if (!_baseUrl.value.startsWith("https://")) {
-            _uiState.value = _uiState.value.copy(error = "Server URL must start with https://")
+        // http:// is accepted only for private-VPN homelab hosts allow-listed in
+        // network_security_config (ADR-011); any other host stays TLS-only.
+        if (!_baseUrl.value.startsWith("http://") && !_baseUrl.value.startsWith("https://")) {
+            _uiState.value = _uiState.value.copy(error = "Server URL must start with http:// or https://")
             return
         }
         _uiState.value = _uiState.value.copy(error = null)
