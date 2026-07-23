@@ -17,7 +17,12 @@ object ActiveServer {
     @Synchronized
     fun bind(context: Context): Boolean {
         val app = context.applicationContext
-        val account = runBlocking { ServerAccountStore(app).accounts.first().firstOrNull() } ?: return false
+        // Pick the most recently paired account, not the oldest: re-pairing adds
+        // a new account, and older accounts may hold tokens the server no longer
+        // honors (device removed) -> "invalid or expired token".
+        val account = runBlocking {
+            ServerAccountStore(app).accounts.first().maxByOrNull { it.pairedAt }
+        } ?: return false
         if (boundId == account.id && client != null && repo != null) return true
         // Account changed: stop the previous shared socket before rebinding.
         client?.ws?.stop()

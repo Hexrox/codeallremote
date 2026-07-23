@@ -12,6 +12,7 @@ import io.codeallremote.car.android.store.newServerAccountId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class PairingViewModel(
@@ -72,9 +73,16 @@ class PairingViewModel(
             val rest = restFactory(_baseUrl.value.trim())
             when (val r = rest.pairDevice(code.trim(), _deviceName.value.trim(), pub)) {
                 is CarResult.Ok -> {
+                    val base = _baseUrl.value.trim()
+                    // Replace any previous account for the same server so re-pairing
+                    // does not accumulate stale accounts/tokens.
+                    accounts.accounts.first().filter { it.baseUrl == base }.forEach {
+                        tokens.remove(it.id)
+                        accounts.remove(it.id)
+                    }
                     val id = newServerAccountId()
-                    val host = runCatching { java.net.URI(_baseUrl.value.trim()).host }
-                        .getOrNull() ?: _baseUrl.value.trim()
+                    val host = runCatching { java.net.URI(base).host }
+                        .getOrNull() ?: base
                     accounts.add(
                         ServerAccount(
                             id = id,

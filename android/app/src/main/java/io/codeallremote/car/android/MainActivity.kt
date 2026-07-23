@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
         // service only if one exists. Both the service and Home share the single
         // CarClient/WebSocket owned by ActiveServer.
         lifecycleScope.launch {
-            val account = ServerAccountStore(applicationContext).accounts.first().firstOrNull()
+            val account = ServerAccountStore(applicationContext).accounts.first().maxByOrNull { it.pairedAt }
             if (account != null && account.pairedAt.isNotEmpty()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
