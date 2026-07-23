@@ -5,6 +5,35 @@
 **Relates to:** ADR-009 (claude CLI interface), ADR-010 (MCP approvals),
 ADR-011 (transport), CCR_WIRING_CHANGES.md, task 28.
 
+## PREREQUISITE SPIKE (do this BEFORE any 29 coding)
+
+Claude Code has **native Remote Control** (`claude --remote-control [name]`,
+`claude remote`) — control a live session from the Claude mobile app. It requires
+a **claude.ai OAuth login** and relays through Anthropic's cloud. CAR's entire
+premise (CCR_WIRING_CHANGES.md) is that native Remote Control **breaks when the
+session is routed to a non-Anthropic backend via CCR**. As of 2026-07-23 that is
+an *assumption*, not a verified fact.
+
+Evidence leaning toward the premise: CCR routes via `ANTHROPIC_BASE_URL` +
+`ANTHROPIC_AUTH_TOKEN=test` (API-key mode); the CLI states OAuth/keychain are not
+read in API-key/`--settings` mode; Remote Control needs OAuth. Untested path:
+OAuth login **plus** only `ANTHROPIC_BASE_URL` overridden (no AUTH_TOKEN), which
+might keep Remote Control working while inference goes to CCR/GLM/DeepSeek.
+
+**Spike (operator, ~2 min):** `claude auth login`, then
+`ANTHROPIC_BASE_URL=http://127.0.0.1:3456 claude --remote-control`; in the Claude
+mobile app check (a) the session appears and is controllable, and (b) inference
+is served by DeepSeek/GLM (not Anthropic).
+
+**Decision gate:**
+- If BOTH hold → native Remote Control already delivers this task's goal for
+  CCR-routed sessions. **Do NOT build task 29**; use native. Re-scope CAR to
+  whatever native does not cover (or wind it down for this use case).
+- If it fails (no connect / forces Anthropic inference) → the premise holds and
+  task 29 is justified; proceed.
+
+Everything below is contingent on this spike failing.
+
 ## Why (the real product goal)
 
 The operator's expectation, verbatim: *"I run Claude Code in my homelab (e.g.
