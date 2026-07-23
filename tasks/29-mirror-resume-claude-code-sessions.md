@@ -47,6 +47,33 @@ versa). Claude Code is designed around resumability, so this is the natural flow
 The UI MUST make it clear that opening/sending from the phone resumes the session
 (and MUST warn/disable if that session appears to have a live process attached).
 
+## Design approaches (owner must choose — see §Decisions)
+
+Verified on the homelab (2026-07-23): the operator runs interactive sessions in
+**detached tmux** (`claude`, `claude2`, routed to DeepSeek/GLM via CCR, some with
+`bypass permissions on`). `tmux capture-pane` and `tmux send-keys` work on a
+detached session; the live process appends to the same `<uuid>.jsonl` transcript.
+Note: `car` cannot reach `hexan`'s tmux socket (`/tmp/tmux-995/default`) — the
+user/access decision below applies to tmux too.
+
+- **Approach 1 — live tmux co-drive.** Read the pane with `capture-pane`, send
+  input with `send-keys` to the *live* process. Pro: true live co-driving of the
+  operator's existing session, no hand-off. Con: it screen-scrapes a TUI (ANSI,
+  box-drawing, spinners, redraws, truncation) — lossy read; `send-keys` is blind
+  keystroke injection dependent on TUI state; approvals become TUI-dialog driving
+  (and vanish under `bypass permissions`); coupled to tmux + exact session name.
+- **Approach 2 — transcript + resume** (the 29-A/B/C body below). Clean
+  structured read (JSONL) + clean stream-json send via `claude -p --resume` +
+  real MCP approvals. Con: hand-off model, not live co-drive of the tmux process.
+- **Approach 3 — CAR owns the pty/tmux from launch.** Clean AND live AND locally
+  attachable, but only for sessions CAR starts (not pre-existing ones).
+- **Approach 4 — HYBRID (recommended to evaluate first).** Read from the clean
+  `<uuid>.jsonl` (29-A/B), and for a session detected as LIVE in tmux, **send via
+  `tmux send-keys` to co-drive it**; fall back to `--resume` (29-C) only when the
+  session is not live. Gives clean read + live send without a resume fork, because
+  the tmux process and the transcript are the same session. Con: still tmux-coupled
+  for the send path; approval UX depends on the session's permission mode.
+
 ## Scope — three capabilities, land incrementally
 
 ### 29-A [code-now] Discover sessions from transcripts
@@ -109,13 +136,21 @@ Read-only enumeration of Claude Code sessions from the transcript directory.
    session that looks live in a terminal (warn vs hard-disable).
 3. **Roots config.** Which project roots to expose (all of
    `~/.claude/projects`, or an allow-list of projects).
+4. **Send path: live co-drive vs hand-off vs hybrid.** Choose the §Design
+   approach: (1) tmux `send-keys` live co-drive, (2) `--resume` hand-off, or
+   (4) hybrid (clean JSONL read + tmux send for live sessions, resume otherwise).
+   Recommendation: prototype **Approach 4** — it matches the operator's mental
+   model ("see and drive my live DeepSeek/GLM session") most closely while
+   keeping the read clean. Accept that live send inherits the session's own
+   permission mode (no CAR approval when the session runs `bypass permissions`).
 
 ## Non-goals / scope guards
 
-- No live mirroring of a terminal TUI's in-memory state (only file-backed
-  transcript + resume). No `tmux send-keys` keystroke injection.
 - No change to CAR-owned session semantics, the approval contract, or the
   transport policy.
+- If Approach 1/4 (tmux) is chosen, the read still comes from the JSONL
+  transcript, NOT from parsing `capture-pane` output — TUI scraping for *display*
+  is out of scope (too lossy); `capture-pane` is only for liveness detection.
 - Discovery/read are additive read-only endpoints; they must not mutate
   transcripts. Only 29-C (resume) appends, via `claude` itself.
 
